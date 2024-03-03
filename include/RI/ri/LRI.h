@@ -72,7 +72,9 @@ public:
 	void cal_loop3(
 		const std::vector<Label::ab_ab> &labels,
 		std::vector<std::map<TA, std::map<TAC, Tensor<Tdata>>>> &Ds_result,
-		const double fac_add_Ds = 1.0);
+		const double fac_add_Ds = 1.0,
+		// const std::map<TA, std::set<TAC>>& irreducible_sector = {});
+		const std::map<std::pair<TA, TA>, std::set<TC>>& irreducible_sector = {});
 
 public:
 	std::shared_ptr<Parallel_LRI<TA,Tcell,Ndim,Tdata>>

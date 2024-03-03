@@ -62,7 +62,8 @@ public:
 		const Tdata_real &threshold) { this->lri.csm.set_threshold(threshold); }
 
 	void cal_Hs(
-		const std::array<std::string,3> &save_names_suffix={"","",""});		// "Cs","Vs","Ds"
+		const std::array<std::string, 3>& save_names_suffix = { "","","" },		// "Cs","Vs","Ds"
+		const std::map<std::pair<TA, TA>, std::set<TC>>& irreducible_sector = {});
 	void cal_force(
 		const std::array<std::string,5> &save_names_suffix={"","","","",""});	// "Cs","Vs","Ds","dCs","dVs"
 	void cal_stress(

@@ -22,7 +22,8 @@ template<typename TA, typename Tcell, std::size_t Ndim, typename Tdata>
 void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 	const std::vector<Label::ab_ab> &labels,
 	std::vector<std::map<TA, std::map<TAC, Tensor<Tdata>>>> &Ds_result,
-	const double fac_add_Ds)
+	const double fac_add_Ds,
+	const std::map<std::pair<TA, TA>, std::set<TC>>& irreducible_sector)
 {
 	using namespace Array_Operator;
 
@@ -62,6 +63,23 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 		? LRI_Cal_Aux::cal_Ds_transpose( data_wrapper(Label::ab::b).Ds_ab )
 		: std::map<TA, std::map<TAC, Tensor<Tdata>>>{};
 
+	auto in_irreducible_sector_a = [&irreducible_sector, this](const TA& Aa, const TAC& Ab) -> bool
+		{
+			const std::pair<TA, TA> ap = { Aa, Ab.first };
+			if (irreducible_sector.find(ap) != irreducible_sector.end())
+				if (irreducible_sector.at(ap).find(Ab.second % this->period) != irreducible_sector.at(ap).end())
+					return true;
+			return false;
+		};
+	auto in_irreducible_sector_ac = [&irreducible_sector, this](const TAC& Aa, const TAC& Ab) -> bool
+		{
+			const TC dR = (Ab.second - Aa.second) % this->period;
+			const std::pair<TA, TA> ap = { Aa.first, Ab.first };
+			if (irreducible_sector.find(ap) != irreducible_sector.end())
+				if (irreducible_sector.at(ap).find(dR) != irreducible_sector.at(ap).end())
+					return true;
+			return false;
+		};
 	omp_lock_t lock_Ds_result_add;
 	omp_init_lock(&lock_Ds_result_add);
 
@@ -128,6 +146,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							// D_result = D_mul * D_b
 							for(const TAC &Ab2 : list_Ab2)
 							{
+								// if ((Ab2-Aa2) exceeds the irreducible sector) continue (known Ab01)
+								if (!irreducible_sector.empty() && !in_irreducible_sector_ac(Aa2, Ab2))	continue;
+
 								const Tensor<Tdata> D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
 								if(D_b.empty())	continue;
 								// a2b2 = a2b0b1 * b0b1b2
@@ -186,7 +207,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							// D_result = D_mul * D_a * D_a0b0
 							for(const TAC &Aa2 : list_Aa2)
 							{
-								const Tensor<Tdata> &D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
+								// if ((Ab01-Aa2) exceeds the irreducible sector) continue
+								if (!irreducible_sector.empty() && !in_irreducible_sector_ac(Aa2, Ab01))	continue;
+
+								const Tensor<Tdata>& D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
 								if(D_a_transpose.empty())	continue;
 								// b1a1a0 = b0b1a1 * a0b0
 								const Tensor<Tdata> D_tmp2 = Tensor_Multiply::x1x2y0_ax1x2_y0a(D_mul, D_a0b0);
@@ -246,7 +270,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							// D_result = D_mul * D_a0b0 * D_b
 							for(const TAC &Ab2 : list_Ab2)
 							{
-								const Tensor<Tdata> &D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{Ab2.first, (Ab2.second-Ab01.second)%this->period});
+								// if ((Ab2-Aa01) exceeds the irreducible sector) continue
+								if (!irreducible_sector.empty() && !in_irreducible_sector_a(Aa01, Ab2))	continue;
+
+								const Tensor<Tdata>& D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{ Ab2.first, (Ab2.second - Ab01.second) % this->period });
 								if(D_b_transpose.empty())	continue;
 
 								// a1b1b0 = a0a1b1 * a0b0
@@ -305,7 +332,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							// D_result = D_mul * D_a0b0 * D_b
 							for(const TAC &Ab01 : list_Ab01)
 							{
-								const Tensor<Tdata> &D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{Ab2.first, (Ab2.second-Ab01.second)%this->period});
+								// if ((Ab01-Aa01) exceeds the irreducible sector) continu
+								if (!irreducible_sector.empty() && !in_irreducible_sector_a(Aa01, Ab01))	continue;
+
+								const Tensor<Tdata>& D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{ Ab2.first, (Ab2.second - Ab01.second) % this->period });
 								if(D_b_transpose.empty())	continue;
 								const Tensor<Tdata> D_a0b0 = tools.get_Ds_ab(Label::ab::a0b0, Aa01, Ab01);
 								if(D_a0b0.empty())	continue;

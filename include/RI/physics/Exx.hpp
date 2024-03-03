@@ -148,7 +148,8 @@ void Exx<TA,Tcell,Ndim,Tdata>::set_dVs(
 
 template<typename TA, typename Tcell, std::size_t Ndim, typename Tdata>
 void Exx<TA,Tcell,Ndim,Tdata>::cal_Hs(
-	const std::array<std::string,3> &save_names_suffix)						// "Cs","Vs","Ds"
+	const std::array<std::string, 3>& save_names_suffix,						// "Cs","Vs","Ds"
+	const std::map<std::pair<TA, TA>, std::set<TC>>& irreducible_sector)
 {
 	using namespace Map_Operator;
 
@@ -179,7 +180,7 @@ void Exx<TA,Tcell,Ndim,Tdata>::cal_Hs(
 		 Label::ab_ab::a0b0_a1b2,
 		 Label::ab_ab::a0b0_a2b1,
 		 Label::ab_ab::a0b0_a2b2},
-		Hs_vec);
+		Hs_vec, 1.0, irreducible_sector);
 	if(this->flag_finish.D_delta)
 		this->Hs = this->Hs + Hs_vec[0];
 	else
