@@ -9,7 +9,7 @@
 #include "LRI_Cal_Aux.h"
 #include "../global/Array_Operator.h"
 #include "../global/Tensor_Multiply.h"
-
+#include "../symmetry/Symmetry_Filter.h"
 #include <omp.h>
 #ifdef __MKL_RI
 #include <mkl_service.h>
@@ -64,35 +64,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 		? LRI_Cal_Aux::cal_Ds_transpose( data_wrapper(Label::ab::b).Ds_ab )
 		: std::map<TA, std::map<TAC, Tensor<Tdata>>>{};
 
-	auto in_irreducible_sector_a = [&irreducible_sector, this](const TA& Aa, const TAC& Ab) -> bool
-		{
-			const std::pair<TA, TA> ap = { Aa, Ab.first };
-			if (irreducible_sector.find(ap) != irreducible_sector.end())
-				if (irreducible_sector.at(ap).find(Ab.second % this->period) != irreducible_sector.at(ap).end())
-					return true;
-			return false;
-		};
-	auto in_irreducible_sector_ac = [&irreducible_sector, this](const TAC& Aa, const TAC& Ab) -> bool
-		{
-			const TC dR = (Ab.second - Aa.second) % this->period;
-			const std::pair<TA, TA> ap = { Aa.first, Ab.first };
-			if (irreducible_sector.find(ap) != irreducible_sector.end())
-				if (irreducible_sector.at(ap).find(dR) != irreducible_sector.at(ap).end())
-					return true;
-			return false;
-		};
-	auto is_a_of_irreducible_sector = [&irreducible_sector, this](const TA& Aa) -> bool
-		{
-			for (const auto& apR : irreducible_sector)
-				if (apR.first.first == Aa)return true;
-			return false;
-		};
-	auto is_b_of_irreducible_sector = [&irreducible_sector, this](const TA& Ab) -> bool
-		{
-			for (const auto& apR : irreducible_sector)
-				if (apR.first.second == Ab)return true;
-			return false;
-		};
+	Symmetry_Filter<TA, Tcell, Ndim, Tdata> symmetry_filter(this->period, irreducible_sector);
+
 	omp_lock_t lock_Ds_result_add;
 	omp_init_lock(&lock_Ds_result_add);
 
@@ -131,7 +104,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 					for(const TAC &Aa2 : list_Aa2)
 					{
-						if (!irreducible_sector.empty() && !is_a_of_irreducible_sector(Aa2.first)) continue;
+						if (!symmetry_filter.is_I_in_irreducible_sector(Aa2.first)) continue;
 
 						std::map<TAC, Tensor<Tdata>> Ds_result_fixed;
 
@@ -162,7 +135,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							for(const TAC &Ab2 : list_Ab2)
 							{
 								// if ((Ab2-Aa2) exceeds the irreducible sector) continue (known Ab01)
-								if (!irreducible_sector.empty() && !in_irreducible_sector_ac(Aa2, Ab2))	continue;
+								if (!symmetry_filter.in_irreducible_sector(Aa2, Ab2))	continue;
 
 								const Tensor<Tdata> D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
 								if(D_b.empty())	continue;
@@ -196,7 +169,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 					for(const TAC &Ab01 : list_Ab01)
 					{
-						if (!irreducible_sector.empty() && !is_b_of_irreducible_sector(Ab01.first)) continue;
+						if (!symmetry_filter.is_J_in_irreducible_sector(Ab01.first)) continue;
 
 						std::map<TAC, Tensor<Tdata>> Ds_result_fixed;
 
@@ -225,7 +198,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							for(const TAC &Aa2 : list_Aa2)
 							{
 								// if ((Ab01-Aa2) exceeds the irreducible sector) continue
-								if (!irreducible_sector.empty() && !in_irreducible_sector_ac(Aa2, Ab01))	continue;
+								if (!symmetry_filter.in_irreducible_sector(Aa2, Ab01))	continue;
 
 								const Tensor<Tdata>& D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
 								if(D_a_transpose.empty())	continue;
@@ -261,7 +234,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 					for(const TA &Aa01 : list_Aa01)
 					{
-						if (!irreducible_sector.empty() && !is_a_of_irreducible_sector(Aa01)) continue;
+						if (!symmetry_filter.is_I_in_irreducible_sector(Aa01)) continue;
 
 						std::map<TAC, Tensor<Tdata>> Ds_result_fixed;
 
@@ -290,7 +263,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							for(const TAC &Ab2 : list_Ab2)
 							{
 								// if ((Ab2-Aa01) exceeds the irreducible sector) continue
-								if (!irreducible_sector.empty() && !in_irreducible_sector_a(Aa01, Ab2))	continue;
+								if (!symmetry_filter.in_irreducible_sector(Aa01, Ab2))	continue;
 
 								const Tensor<Tdata>& D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{ Ab2.first, (Ab2.second - Ab01.second) % this->period });
 								if(D_b_transpose.empty())	continue;
@@ -327,7 +300,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 					for(const TA &Aa01 : list_Aa01)
 					{
-						if (!irreducible_sector.empty() && !is_a_of_irreducible_sector(Aa01))	continue;
+						if (!symmetry_filter.is_I_in_irreducible_sector(Aa01))	continue;
 
 						std::map<TAC, Tensor<Tdata>> Ds_result_fixed;
 
@@ -354,7 +327,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							for(const TAC &Ab01 : list_Ab01)
 							{
 								// if ((Ab01-Aa01) exceeds the irreducible sector) continu
-								if (!irreducible_sector.empty() && !in_irreducible_sector_a(Aa01, Ab01))	continue;
+								if (!symmetry_filter.in_irreducible_sector(Aa01, Ab01))	continue;
 
 								const Tensor<Tdata>& D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{ Ab2.first, (Ab2.second - Ab01.second) % this->period });
 								if(D_b_transpose.empty())	continue;
