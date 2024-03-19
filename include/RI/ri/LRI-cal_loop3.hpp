@@ -25,6 +25,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 	const double fac_add_Ds,
 	const std::map<std::pair<TA, TA>, std::set<TC>>& irreducible_sector)
 {
+	std::cout << "using loop3 LibRI" << std::endl;
 	using namespace Array_Operator;
 
 	const Data_Pack_Wrapper<TA,TC,Tdata> data_wrapper(this->data_pool, this->data_ab_name);
@@ -80,6 +81,18 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 					return true;
 			return false;
 		};
+	auto is_a_of_irreducible_sector = [&irreducible_sector, this](const TA& Aa) -> bool
+		{
+			for (const auto& apR : irreducible_sector)
+				if (apR.first.first == Aa)return true;
+			return false;
+		};
+	auto is_b_of_irreducible_sector = [&irreducible_sector, this](const TA& Ab) -> bool
+		{
+			for (const auto& apR : irreducible_sector)
+				if (apR.first.second == Ab)return true;
+			return false;
+		};
 	omp_lock_t lock_Ds_result_add;
 	omp_init_lock(&lock_Ds_result_add);
 
@@ -118,7 +131,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 					for(const TAC &Aa2 : list_Aa2)
 					{
-						std::map<TAC,Tensor<Tdata>> Ds_result_fixed;
+						if (!irreducible_sector.empty() && !is_a_of_irreducible_sector(Aa2.first)) continue;
+
+						std::map<TAC, Tensor<Tdata>> Ds_result_fixed;
 
 						#pragma omp for schedule(dynamic) nowait
 						for(std::size_t ib01=0; ib01<list_Ab01.size(); ++ib01)
@@ -181,7 +196,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 					for(const TAC &Ab01 : list_Ab01)
 					{
-						std::map<TAC,Tensor<Tdata>> Ds_result_fixed;
+						if (!irreducible_sector.empty() && !is_b_of_irreducible_sector(Ab01.first)) continue;
+
+						std::map<TAC, Tensor<Tdata>> Ds_result_fixed;
 
 						#pragma omp for schedule(dynamic) nowait
 						for(std::size_t ia01=0; ia01<list_Aa01.size(); ++ia01)
@@ -244,7 +261,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 					for(const TA &Aa01 : list_Aa01)
 					{
-						std::map<TAC,Tensor<Tdata>> Ds_result_fixed;
+						if (!irreducible_sector.empty() && !is_a_of_irreducible_sector(Aa01)) continue;
+
+						std::map<TAC, Tensor<Tdata>> Ds_result_fixed;
 
 						#pragma omp for schedule(dynamic) nowait
 						for(std::size_t ib01=0; ib01<list_Ab01.size(); ++ib01)
@@ -308,7 +327,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 					for(const TA &Aa01 : list_Aa01)
 					{
-						std::map<TAC,Tensor<Tdata>> Ds_result_fixed;
+						if (!irreducible_sector.empty() && !is_a_of_irreducible_sector(Aa01))	continue;
+
+						std::map<TAC, Tensor<Tdata>> Ds_result_fixed;
 
 						#pragma omp for schedule(dynamic) nowait
 						for(std::size_t ib2=0; ib2<list_Ab2.size(); ++ib2)
