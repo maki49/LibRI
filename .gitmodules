@@ -1,0 +1,4 @@
+[submodule "PyLRI/pybind11"]
+	path = PyLRI/pybind11
+	url = https://github.com/pybind/pybind11
+	branch = stable
