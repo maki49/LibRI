@@ -2,3 +2,8 @@
 
 .envrc
 .clangd
+
+.vscode/
+
+PyLRI/build/
+PyLRI/*.so
