@@ -79,14 +79,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 						for(std::size_t ib01=0; ib01<list_Ab01.size(); ++ib01)
 						{
 							const TAC &Ab01 = list_Ab01[ib01];
-							if(this->filter_atom->filter_for2(label,Aa2,Ab01))	continue;
+							// if(this->filter_atom->filter_for2(label,Aa2,Ab01))	continue;
 							// D_mul = D_a * D_a0b0 * D_a1b1
 							Tensor<Tdata> D_mul;
 
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
 							for (const TA& Aa01 : list_Aa01)
 							{
-								if(this->filter_atom->filter_for31(label,Aa2,Ab01,Aa01))	continue;
+								// if(this->filter_atom->filter_for31(label,Aa2,Ab01,Aa01))	continue;
 								const Tensor<Tdata> D_a = tools.get_Ds_ab(Label::ab::a, Aa01, Aa2);
 								if(D_a.empty())	continue;
 								const Tensor<Tdata> D_a0b0 = tools.get_Ds_ab(Label::ab::a0b0, Aa01, Ab01);
@@ -149,12 +149,12 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 						for(std::size_t ib01=0; ib01<list_Ab01.size(); ++ib01)
 						{
 							const TAC &Ab01 = list_Ab01[ib01];
-							if(this->filter_atom->filter_for2(label,Aa2,Ab01))	continue;
+							// if(this->filter_atom->filter_for2(label,Aa2,Ab01))	continue;
 							// D_mul = D_a * D_a0b1 * D_a1b0
 							Tensor<Tdata> D_mul;
 							for(const TA &Aa01 : list_Aa01)
 							{
-								if(this->filter_atom->filter_for31(label,Aa2,Ab01,Aa01))	continue;
+								// if(this->filter_atom->filter_for31(label,Aa2,Ab01,Aa01))	continue;
 								const Tensor<Tdata> &D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
 								if(D_a_transpose.empty())	continue;
 								const Tensor<Tdata> D_a0b1 = tools.get_Ds_ab(Label::ab::a0b1, Aa01, Ab01);
@@ -216,7 +216,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 						for(std::size_t ia01=0; ia01<list_Aa01.size(); ++ia01)
 						{
 							const TA &Aa01 = list_Aa01[ia01];
-							if(this->filter_atom->filter_for2(label,Ab01,Aa01))	continue;
+							// if(this->filter_atom->filter_for2(label,Ab01,Aa01))	continue;
 							const Tensor<Tdata> D_a0b0 = tools.get_Ds_ab(Label::ab::a0b0, Aa01, Ab01);
 							if(D_a0b0.empty())	continue;
 							// D_mul = D_b * D_a1b2
@@ -225,7 +225,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
 							for (const TAC& Ab2 : list_Ab2)
 							{
-								if(this->filter_atom->filter_for31(label,Ab01,Aa01,Ab2))	continue;
+								// if(this->filter_atom->filter_for31(label,Ab01,Aa01,Ab2))	continue;
 								const Tensor<Tdata> D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
 								if(D_b.empty())	continue;
 								const Tensor<Tdata> D_a1b2 = tools.get_Ds_ab(Label::ab::a1b2, Aa01, Ab2);
@@ -480,7 +480,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 						for(std::size_t ib01=0; ib01<list_Ab01.size(); ++ib01)
 						{
 							const TAC &Ab01 = list_Ab01[ib01];
-							if(this->filter_atom->filter_for2(label,Aa01,Ab01))	continue;
+							// if(this->filter_atom->filter_for2(label,Aa01,Ab01))	continue;
 							const Tensor<Tdata> D_a0b0 = tools.get_Ds_ab(Label::ab::a0b0, Aa01, Ab01);
 							if(D_a0b0.empty())	continue;
 							// D_mul = D_a * D_a2b1
@@ -488,7 +488,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
 							for (const TAC& Aa2 : list_Aa2)
 							{
-								if(this->filter_atom->filter_for31(label,Aa01,Ab01,Aa2))	continue;
+								// if(this->filter_atom->filter_for31(label,Aa01,Ab01,Aa2))	continue;
 								const Tensor<Tdata> &D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
 								if(D_a_transpose.empty())	continue;
 								const Tensor<Tdata> D_a2b1 = tools.get_Ds_ab(Label::ab::a2b1, Aa2, Ab01);
@@ -748,13 +748,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 						for(std::size_t ib2=0; ib2<list_Ab2.size(); ++ib2)
 						{
 							const TAC &Ab2 = list_Ab2[ib2];
-							if(this->filter_atom->filter_for2(label,Aa01,Ab2))	continue;
+							// if(this->filter_atom->filter_for2(label,Aa01,Ab2))	continue;
 							// D_mul = D_a * D_a2b2
 							Tensor<Tdata> D_mul;
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
 							for (const TAC& Aa2 : list_Aa2)
 							{
-								if(this->filter_atom->filter_for31(label,Aa01,Ab2,Aa2))	continue;
+								// if(this->filter_atom->filter_for31(label,Aa01,Ab2,Aa2))	continue;
 								const Tensor<Tdata> &D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
 								if(D_a_transpose.empty())	continue;
 								const Tensor<Tdata> D_a2b2 = tools.get_Ds_ab(Label::ab::a2b2, Aa2, Ab2);

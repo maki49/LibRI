@@ -224,9 +224,9 @@ void Exx<TA,Tcell,Ndim,Tdata>::cal_Hs(
 		this->Hs);
 
 	//if()
-		this->energy = this->post_2D.cal_energy(
-			this->post_2D.saves["Ds_"+save_names_suffix[2]],
-			this->post_2D.set_tensors_map2(this->Hs) );
+		// this->energy = this->post_2D.cal_energy(
+		// 	this->post_2D.saves["Ds_"+save_names_suffix[2]],
+		// 	this->post_2D.set_tensors_map2(this->Hs) );
 
 	if(!this->flag_save_result.Hs)
 		this->Hs.clear();
