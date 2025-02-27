@@ -9,7 +9,7 @@
 #include "LRI_Cal_Aux.h"
 #include "../global/Array_Operator.h"
 #include "../global/Tensor_Multiply.h"
-
+#include "/home/fortneu49/abacus-develop/source/module_base/timer.h"
 #include <omp.h>
 #ifdef __MKL_RI
 #include <mkl_service.h>
@@ -56,7 +56,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 				case Label::ab_ab::a0b0_a1b1:
 				{
-					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map( LRI_Cal_Aux::filter_list_map(
+					ModuleBase::timer::tick("LRI::cal_loop3", "a0b0_a1b1");
+					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map(LRI_Cal_Aux::filter_list_map(
 						list_Aa01_Da,
 						data_wrapper(Label::ab::a0b0).Ds_ab ),
 						data_wrapper(Label::ab::a1b1).Ds_ab );
@@ -81,7 +82,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							if(this->filter_atom->filter_for2(label,Aa2,Ab01))	continue;
 							// D_mul = D_a * D_a0b0 * D_a1b1
 							Tensor<Tdata> D_mul;
-							for(const TA &Aa01 : list_Aa01)
+
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
+							for (const TA& Aa01 : list_Aa01)
 							{
 								if(this->filter_atom->filter_for31(label,Aa2,Ab01,Aa01))	continue;
 								const Tensor<Tdata> D_a = tools.get_Ds_ab(Label::ab::a, Aa01, Aa2);
@@ -97,8 +100,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								Tensor<Tdata> D_tmp2 = Tensor_Multiply::x1x2y1_ax1x2_ay1(D_tmp1, D_a1b1);
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp2), D_mul);
 							}
-							if(D_mul.empty())	continue;
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
+							if (D_mul.empty())	continue;
 
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
 							// D_result = D_mul * D_b
 							for(const TAC &Ab2 : list_Ab2)
 							{
@@ -109,6 +114,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								Tensor<Tdata> D_tmp3 = Tensor_Multiply::x0y2_x0ab_aby2(D_mul, D_b);
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Ab2]);
 							}
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
 						} // end for Ab01
 
 						if(!Ds_result_fixed.empty())
@@ -116,6 +122,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							                     Ds_result_thread[Aa2.first]);
 						LRI_Cal_Aux::add_Ds_omp_try(std::move(Ds_result_thread), Ds_result, lock_Ds_result_add, fac_add_Ds);
 					} // end for Ab2
+					ModuleBase::timer::tick("LRI::cal_loop3", "a0b0_a1b1");
 				} break; // end case a0b0_a1b1
 
 				case Label::ab_ab::a0b1_a1b0:
@@ -186,7 +193,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 				case Label::ab_ab::a0b0_a1b2:
 				{
-					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map( LRI_Cal_Aux::filter_list_map(
+					ModuleBase::timer::tick("LRI::cal_loop3", "a0b0_a1b2");
+					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map(LRI_Cal_Aux::filter_list_map(
 						list_Aa01_Da,
 						data_wrapper(Label::ab::a0b0).Ds_ab ),
 						data_wrapper(Label::ab::a1b2).Ds_ab );
@@ -213,7 +221,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							if(D_a0b0.empty())	continue;
 							// D_mul = D_b * D_a1b2
 							Tensor<Tdata> D_mul;
-							for(const TAC &Ab2 : list_Ab2)
+
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
+							for (const TAC& Ab2 : list_Ab2)
 							{
 								if(this->filter_atom->filter_for31(label,Ab01,Aa01,Ab2))	continue;
 								const Tensor<Tdata> D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
@@ -225,8 +235,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								Tensor<Tdata> D_tmp1 = Tensor_Multiply::x0x1y0_x0x1a_y0a(D_b, D_a1b2);
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp1), D_mul);
 							}
-							if(D_mul.empty())	continue;
-
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
+							if (D_mul.empty())	continue;
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
 							// D_result = D_mul * D_a * D_a0b0
 							for(const TAC &Aa2 : list_Aa2)
 							{
@@ -239,6 +250,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								Tensor<Tdata> D_tmp3 = Tensor_Multiply::x2y0_abx2_y0ab(D_a_transpose, D_tmp2);
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Aa2]);
 							}
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
 						} // end for Aa01
 
 						if(!Ds_result_fixed.empty())
@@ -246,6 +258,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							                     Ds_result_thread);
 						LRI_Cal_Aux::add_Ds_omp_try(std::move(Ds_result_thread), Ds_result, lock_Ds_result_add, fac_add_Ds);
 					} // end for Ab01
+					ModuleBase::timer::tick("LRI::cal_loop3", "a0b0_a1b2");
 				} break; // end case a0b0_a1b2
 
 				case Label::ab_ab::a0b1_a1b2:
@@ -444,6 +457,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 				case Label::ab_ab::a0b0_a2b1:
 				{
+					ModuleBase::timer::tick("LRI::cal_loop3", "a0b0_a2b1");
 					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map(
 						list_Aa01_Da,
 						data_wrapper(Label::ab::a0b0).Ds_ab );
@@ -459,7 +473,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 					for(const TA &Aa01 : list_Aa01)
 					{
-						if(this->filter_atom->filter_for1(label,Aa01))	continue;
+						if (this->filter_atom->filter_for1(label, Aa01))	continue;
 						std::map<TAC,Tensor<Tdata>> Ds_result_fixed;
 
 						#pragma omp for schedule(dynamic) nowait
@@ -471,7 +485,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							if(D_a0b0.empty())	continue;
 							// D_mul = D_a * D_a2b1
 							Tensor<Tdata> D_mul;
-							for(const TAC &Aa2 : list_Aa2)
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
+							for (const TAC& Aa2 : list_Aa2)
 							{
 								if(this->filter_atom->filter_for31(label,Aa01,Ab01,Aa2))	continue;
 								const Tensor<Tdata> &D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
@@ -483,10 +498,12 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								Tensor<Tdata> D_tmp1 = Tensor_Multiply::x1y0y1_ax1_y0y1a(D_a2b1, D_a_transpose);
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp1), D_mul);
 							}
-							if(D_mul.empty())	continue;
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
+							if (D_mul.empty())	continue;
 
 							// D_result = D_mul * D_a0b0 * D_b
-							for(const TAC &Ab2 : list_Ab2)
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							for (const TAC& Ab2 : list_Ab2)
 							{
 								if(this->filter_atom->filter_for32(label,Aa01,Ab01,Ab2))	continue;
 								const Tensor<Tdata> &D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
@@ -498,6 +515,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								Tensor<Tdata> D_tmp3 = Tensor_Multiply::x2y2_abx2_aby2(D_tmp2, D_b);
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Ab2]);
 							}
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
 						} // end for Ab01
 
 						if(!Ds_result_fixed.empty())
@@ -505,6 +523,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							                     Ds_result_thread[Aa01]);
 						LRI_Cal_Aux::add_Ds_omp_try(std::move(Ds_result_thread), Ds_result, lock_Ds_result_add, fac_add_Ds);
 					} // end for Aa01
+					ModuleBase::timer::tick("LRI::cal_loop3", "a0b0_a2b1");
 				} break; // end case a0b0_a2b1
 
 				case Label::ab_ab::a0b1_a2b0:
@@ -706,6 +725,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 				case Label::ab_ab::a0b0_a2b2:
 				{
+					ModuleBase::timer::tick("LRI::cal_loop3", "a0b0_a2b2");
 					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map(
 						list_Aa01_Da,
 						data_wrapper(Label::ab::a0b0).Ds_ab );
@@ -731,7 +751,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							if(this->filter_atom->filter_for2(label,Aa01,Ab2))	continue;
 							// D_mul = D_a * D_a2b2
 							Tensor<Tdata> D_mul;
-							for(const TAC &Aa2 : list_Aa2)
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
+							for (const TAC& Aa2 : list_Aa2)
 							{
 								if(this->filter_atom->filter_for31(label,Aa01,Ab2,Aa2))	continue;
 								const Tensor<Tdata> &D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
@@ -743,10 +764,12 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								Tensor<Tdata> D_tmp1 = Tensor_Multiply::x1y0y1_ax1_y0y1a(D_a2b2, D_a_transpose);
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp1), D_mul);
 							}
-							if(D_mul.empty())	continue;
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
+							if (D_mul.empty())	continue;
 
 							// D_result = D_mul * D_a0b0 * D_b
-							for(const TAC &Ab01 : list_Ab01)
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							for (const TAC& Ab01 : list_Ab01)
 							{
 								if(this->filter_atom->filter_for32(label,Aa01,Ab2,Ab01))	continue;
 								const Tensor<Tdata> &D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{Ab2.first, (Ab2.second-Ab01.second)%this->period});
@@ -760,6 +783,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								Tensor<Tdata> D_tmp3 = Tensor_Multiply::x2y0_abx2_y0ab(D_tmp2, D_b_transpose);
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Ab01]);
 							}
+							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
 						} // end for Ab01
 
 						if(!Ds_result_fixed.empty())
@@ -767,6 +791,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							                     Ds_result_thread[Aa01]);
 						LRI_Cal_Aux::add_Ds_omp_try(std::move(Ds_result_thread), Ds_result, lock_Ds_result_add, fac_add_Ds);
 					} // end for Aa01
+					ModuleBase::timer::tick("LRI::cal_loop3", "a0b0_a2b2");
 				} break; // end case a0b0_a2b2
 
 				case Label::ab_ab::a0b1_a2b2:
