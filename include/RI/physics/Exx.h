@@ -35,9 +35,17 @@ public:
 		const std::array<Tatom_pos,Ndim> &latvec,
 		const std::array<Tcell,Ndim> &period);
 
+	using Tab = std::pair<TA, TA>;
+	using TabR = std::pair<Tab, TC>;
+	using Tquad_abR = std::pair<TabR, TC>;
+	using Tquads = std::map<TabR, std::set<Tquad_abR>>;
+	using Tquads_weight = std::map<TabR, std::map<Tquad_abR, int>>;
+
 	void set_symmetry(
 		const bool flag_symmetry,
-		const std::map<std::pair<TA,TA>, std::set<TC>> &irreducible_sector);
+		const std::map<std::pair<TA, TA>, std::set<TC>>& irreducible_sector,
+		const Tquads& irquads = {},
+		const Tquads_weight& irquads_weight = {});
 
 	void set_Cs(
 		const std::map<TA, std::map<TAC, Tensor<Tdata>>> &Cs,

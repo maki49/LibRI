@@ -39,11 +39,13 @@ void Exx<TA,Tcell,Ndim,Tdata>::set_parallel(
 template<typename TA, typename Tcell, std::size_t Ndim, typename Tdata>
 void Exx<TA,Tcell,Ndim,Tdata>::set_symmetry(
 	const bool flag_symmetry,
-	const std::map<std::pair<TA,TA>, std::set<TC>> &irreducible_sector)
+	const std::map<std::pair<TA, TA>, std::set<TC>>& irreducible_sector,
+	const Tquads& irreducible_quads,
+	const Tquads_weight& irreducible_quads_weight)
 {
 	if(flag_symmetry)
 		this->lri.filter_atom = std::make_shared<Filter_Atom_Symmetry<TA,TC,Tdata>>(
-			this->period, irreducible_sector);
+			this->period, irreducible_sector, irreducible_quads, irreducible_quads_weight);
 	else
 		this->lri.filter_atom = std::make_shared<Filter_Atom<TA,TAC>>();
 }
