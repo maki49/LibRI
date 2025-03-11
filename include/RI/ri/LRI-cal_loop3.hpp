@@ -25,6 +25,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 	const double fac_add_Ds)
 {
 	using namespace Array_Operator;
+	int n32_filtered_tot = 0;
+	int n32_tot = 0;
+	int n32_filtered_final_tot = 0;
 
 	const Data_Pack_Wrapper<TA,TC,Tdata> data_wrapper(this->data_pool, this->data_ab_name);
 	const LRI_Cal_Tools<TA,TC,Tdata> tools(this->period, this->data_pool, this->data_ab_name);
@@ -40,8 +43,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 	mkl_set_num_threads(1);
 #endif
 
-	#pragma omp parallel
+#pragma omp parallel reduction(+:n32_filtered_tot,n32_tot, n32_filtered_final_tot)
 	{
+		int n32_filtered = 0;
+		int n32 = 0;
+		int n32_filtered_final = 0;
 		std::map<TA, std::map<TAC, Tensor<Tdata>>> Ds_result_thread;
 
 		for(const Label::ab_ab &label : labels)
@@ -107,9 +113,12 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							// D_result = D_mul * D_b
 							for(const TAC &Ab2 : list_Ab2)
 							{
+								n32++;
 								if(this->filter_atom->filter_for32(label,Aa2,Ab01,Ab2))	continue;
+								n32_filtered++;
 								const Tensor<Tdata> D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
-								if(D_b.empty())	continue;
+								if (D_b.empty())	continue;
+								n32_filtered_final++;
 								// a2b2 = a2b0b1 * b0b1b2
 								Tensor<Tdata> D_tmp3 = Tensor_Multiply::x0y2_x0ab_aby2(D_mul, D_b);
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Ab2]);
@@ -241,9 +250,12 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							// D_result = D_mul * D_a * D_a0b0
 							for(const TAC &Aa2 : list_Aa2)
 							{
+								n32++;
 								if(this->filter_atom->filter_for32(label,Ab01,Aa01,Aa2))	continue;
+								n32_filtered++;
 								const Tensor<Tdata> &D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
-								if(D_a_transpose.empty())	continue;
+								if (D_a_transpose.empty())	continue;
+								n32_filtered_final++;
 								// b1a1a0 = b0b1a1 * a0b0
 								const Tensor<Tdata> D_tmp2 = Tensor_Multiply::x1x2y0_ax1x2_y0a(D_mul, D_a0b0);
 								// a2b1 = a1a0a2 * b1a1a0
@@ -505,9 +517,12 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
 							for (const TAC& Ab2 : list_Ab2)
 							{
+								n32++;
 								if(this->filter_atom->filter_for32(label,Aa01,Ab01,Ab2))	continue;
+								n32_filtered++;
 								const Tensor<Tdata> &D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
-								if(D_b.empty())	continue;
+								if (D_b.empty())	continue;
+								n32_filtered_final++;
 
 								// b0b1a1 = a0b0 * b1a1a0
 								const Tensor<Tdata> D_tmp2 = Tensor_Multiply::x1y0y1_ax1_y0y1a(D_a0b0, D_mul);
@@ -771,11 +786,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
 							for (const TAC& Ab01 : list_Ab01)
 							{
+								n32++;
 								if(this->filter_atom->filter_for32(label,Aa01,Ab2,Ab01))	continue;
+								n32_filtered++;
 								const Tensor<Tdata> &D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{Ab2.first, (Ab2.second-Ab01.second)%this->period});
 								if(D_b_transpose.empty())	continue;
 								const Tensor<Tdata> D_a0b0 = tools.get_Ds_ab(Label::ab::a0b0, Aa01, Ab01);
-								if(D_a0b0.empty())	continue;
+								if (D_a0b0.empty())	continue;
+								n32_filtered_final++;
 
 								// b0b2a1 = a0b0 * b2a1a0
 								const Tensor<Tdata> D_tmp2 = Tensor_Multiply::x1y0y1_ax1_y0y1a(D_a0b0, D_mul);
@@ -1260,12 +1278,18 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 		} // end for label
 
 		LRI_Cal_Aux::add_Ds_omp_wait(std::move(Ds_result_thread), Ds_result, lock_Ds_result_add, fac_add_Ds);
+		n32_tot += n32;
+		n32_filtered_tot += n32_filtered;
+		n32_filtered_final_tot += n32_filtered_final;
 	} // end #pragma omp parallel
 
 	omp_destroy_lock(&lock_Ds_result_add);
 #ifdef __MKL_RI
 	mkl_set_num_threads(mkl_threads);
 #endif
+	std::cout << "n32= " << n32_tot << std::endl;
+	std::cout << "n32_filter= " << n32_filtered_tot << std::endl;
+	std::cout << "n32_filter_final= " << n32_filtered_final_tot << std::endl;
 }
 
 }
