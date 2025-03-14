@@ -116,8 +116,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								n32++;
 								if(this->filter_atom->filter_for32(label,Aa2,Ab01,Ab2))	continue;
 								n32_filtered++;
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
 								const Tensor<Tdata> D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
-								if (D_b.empty())	continue;
+								if (D_b.empty()) {
+									ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+									continue;
+								}
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
 								n32_filtered_final++;
 								// a2b2 = a2b0b1 * b0b1b2
 								Tensor<Tdata> D_tmp3 = Tensor_Multiply::x0y2_x0ab_aby2(D_mul, D_b);
@@ -253,8 +258,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								n32++;
 								if(this->filter_atom->filter_for32(label,Ab01,Aa01,Aa2))	continue;
 								n32_filtered++;
-								const Tensor<Tdata> &D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
-								if (D_a_transpose.empty())	continue;
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+								const Tensor<Tdata>& D_a_transpose = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
+								if (D_a_transpose.empty()) {
+									ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+									continue;
+								}
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
 								n32_filtered_final++;
 								// b1a1a0 = b0b1a1 * a0b0
 								const Tensor<Tdata> D_tmp2 = Tensor_Multiply::x1x2y0_ax1x2_y0a(D_mul, D_a0b0);
@@ -520,8 +530,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								n32++;
 								if(this->filter_atom->filter_for32(label,Aa01,Ab01,Ab2))	continue;
 								n32_filtered++;
-								const Tensor<Tdata> &D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
-								if (D_b.empty())	continue;
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+								const Tensor<Tdata>& D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
+								if (D_b.empty()) {
+									ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+									continue;
+								}
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
 								n32_filtered_final++;
 
 								// b0b1a1 = a0b0 * b1a1a0
@@ -789,10 +804,19 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								n32++;
 								if(this->filter_atom->filter_for32(label,Aa01,Ab2,Ab01))	continue;
 								n32_filtered++;
-								const Tensor<Tdata> &D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{Ab2.first, (Ab2.second-Ab01.second)%this->period});
-								if(D_b_transpose.empty())	continue;
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+								const Tensor<Tdata>& D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{ Ab2.first, (Ab2.second - Ab01.second) % this->period });
+								if (D_b_transpose.empty())
+								{
+									ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+									continue;
+								}
 								const Tensor<Tdata> D_a0b0 = tools.get_Ds_ab(Label::ab::a0b0, Aa01, Ab01);
-								if (D_a0b0.empty())	continue;
+								if (D_a0b0.empty()) {
+									ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+									continue;
+								}
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
 								n32_filtered_final++;
 
 								// b0b2a1 = a0b0 * b2a1a0
