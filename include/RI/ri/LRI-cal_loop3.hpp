@@ -114,6 +114,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							if (D_mul.empty())	continue;
 
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							ModuleBase::timer::tick("LRI::cal_loop3", "32a1b1");
 							// D_result = D_mul * D_b
 							for(const TAC &Ab2 : list_Ab2)
 							{
@@ -134,6 +135,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Ab2]);
 							}
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							ModuleBase::timer::tick("LRI::cal_loop3", "32a1b1");
 						} // end for Ab01
 
 						if(!Ds_result_fixed.empty())
@@ -257,6 +259,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-1");
 							if (D_mul.empty())	continue;
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							ModuleBase::timer::tick("LRI::cal_loop3", "32a1b2");
 							// D_result = D_mul * D_a * D_a0b0
 							for(const TAC &Aa2 : list_Aa2)
 							{
@@ -279,6 +282,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Aa2]);
 							}
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							ModuleBase::timer::tick("LRI::cal_loop3", "32a1b2");
 						} // end for Aa01
 
 						if(!Ds_result_fixed.empty())
@@ -531,6 +535,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 							// D_result = D_mul * D_a0b0 * D_b
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							ModuleBase::timer::tick("LRI::cal_loop3", "32a2b1");
 							for (const TAC& Ab2 : list_Ab2)
 							{
 								n32++;
@@ -553,6 +558,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Ab2]);
 							}
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							ModuleBase::timer::tick("LRI::cal_loop3", "32a2b1");
 						} // end for Ab01
 
 						if(!Ds_result_fixed.empty())
@@ -806,6 +812,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 
 							// D_result = D_mul * D_a0b0 * D_b
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							ModuleBase::timer::tick("LRI::cal_loop3", "32a2b2");
 							for (const TAC& Ab01 : list_Ab01)
 							{
 								n32++;
@@ -834,6 +841,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Ab01]);
 							}
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
+							ModuleBase::timer::tick("LRI::cal_loop3", "32a2b2");
 						} // end for Ab01
 
 						if(!Ds_result_fixed.empty())
