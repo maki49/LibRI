@@ -816,29 +816,45 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3(
 							for (const TAC& Ab01 : list_Ab01)
 							{
 								n32++;
-								if(this->filter_atom->filter_for32(label,Aa01,Ab2,Ab01))	continue;
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_sym_a2b2");
+								if (this->filter_atom->filter_for32(label, Aa01, Ab2, Ab01))
+								{
+									ModuleBase::timer::tick("LRI::cal_loop3", "filter_sym_a2b2");
+									continue;
+								}
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_sym_a2b2");
 								n32_filtered++;
 								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds_a2b2");
 								const Tensor<Tdata>& D_b_transpose = Global_Func::find(Ds_b_transpose, Ab01.first, TAC{ Ab2.first, (Ab2.second - Ab01.second) % this->period });
 								if (D_b_transpose.empty())
 								{
 									ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+									ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds_a2b2");
 									continue;
 								}
 								const Tensor<Tdata> D_a0b0 = tools.get_Ds_ab(Label::ab::a0b0, Aa01, Ab01);
 								if (D_a0b0.empty()) {
 									ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+									ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds_a2b2");
 									continue;
 								}
 								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds");
+								ModuleBase::timer::tick("LRI::cal_loop3", "filter_Ds_a2b2");
 								n32_filtered_final++;
 								n32_a2b2++;
 
 								// b0b2a1 = a0b0 * b2a1a0
+								ModuleBase::timer::tick("LRI::cal_loop3", "mul1_a2b2");
 								const Tensor<Tdata> D_tmp2 = Tensor_Multiply::x1y0y1_ax1_y0y1a(D_a0b0, D_mul);
+								ModuleBase::timer::tick("LRI::cal_loop3", "mul1_a2b2");
 								// a1b1 = b0b2a1 * b1b0b2
+								ModuleBase::timer::tick("LRI::cal_loop3", "mul2_a2b2");
 								Tensor<Tdata> D_tmp3 = Tensor_Multiply::x2y0_abx2_y0ab(D_tmp2, D_b_transpose);
+								ModuleBase::timer::tick("LRI::cal_loop3", "mul2_a2b2");
+								ModuleBase::timer::tick("LRI::cal_loop3", "add_a2b2");
 								LRI_Cal_Aux::add_Ds(std::move(D_tmp3), Ds_result_fixed[Ab01]);
+								ModuleBase::timer::tick("LRI::cal_loop3", "add_a2b2");
 							}
 							ModuleBase::timer::tick("LRI::cal_loop3", "3-2");
 							ModuleBase::timer::tick("LRI::cal_loop3", "32a2b2");
