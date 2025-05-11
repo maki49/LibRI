@@ -28,8 +28,9 @@ namespace RI
 			using namespace Array_Operator;
 			ModuleBase::timer::tick("LRI::cal_loop3", "filter_for32");
 			const Tab& ap = { Aa, Ab.first };
-			if (irreducible_sector_.find(ap) != irreducible_sector_.end())
-				if (irreducible_sector_.at(ap).find(Ab.second % this->period) != irreducible_sector_.at(ap).end())
+			const auto ptr = irreducible_sector_.find(ap);
+			if (ptr != irreducible_sector_.end())
+				if (ptr->second.find(Ab.second % this->period) != ptr->second.end())
 				{
 					ModuleBase::timer::tick("LRI::cal_loop3", "filter_for32");
 					return true;
@@ -44,8 +45,9 @@ namespace RI
 			ModuleBase::timer::tick("LRI::cal_loop3", "filter_for32");
 			const TC dR = (Ab.second - Aa.second) % this->period;
 			const std::pair<TA, TA> ap = { Aa.first, Ab.first };
-			if (irreducible_sector_.find(ap) != irreducible_sector_.end())
-				if (irreducible_sector_.at(ap).find(dR) != irreducible_sector_.at(ap).end())
+			const auto ptr = irreducible_sector_.find(ap);
+			if (ptr != irreducible_sector_.end())
+				if (ptr->second.find(dR) != ptr->second.end())
 				{
 					ModuleBase::timer::tick("LRI::cal_loop3", "filter_for32");
 					return true;
