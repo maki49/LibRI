@@ -119,8 +119,10 @@ for K
 #pragma omp for schedule(static) collapse(2) nowait
 		for (TA I : list_I)
 		{
+			if (this->filter_atom->filter_for1(Label::ab_ab::a0b0_a2b2, I))	continue; // restrict I in the irreducible sector
 			for (TAC J : list_J)	 //	term 1
 			{
+				if (this->filter_atom->filter_for32(Label::ab_ab::a0b0_a2b2, I, J, J))	continue; // restrict (I, J) in the irreducible sector
 				const Tensor<Tdata>& V_IJ = tools.get_Ds_ab(Label::ab::a0b0, I, J);
 				// symmetry: check if (I, J) in irreducible sector
 				for (TAC K : list_K)
@@ -149,6 +151,7 @@ for K
 #pragma omp for schedule(static) collapse(2) nowait
 		for (TA I : list_I)
 		{
+			if (this->filter_atom->filter_for1(Label::ab_ab::a0b0_a2b2, I))	continue;
 			for (TAC L : list_L) // term 2
 			{
 				const Tensor<Tdata>& V_IL = tools.get_Ds_ab(Label::ab::a0b0, I, L);
@@ -160,6 +163,7 @@ for K
 					const Tensor<Tdata> CV_IK_L = Tensor_Multiply::x1x2y1_ax1x2_ay1(C_I_IK, V_IL);
 					for (TAC J : list_J)
 					{
+						if (this->filter_atom->filter_for32(Label::ab_ab::a0b0_a2b2, I, J, J))	continue; // restrict (I, J) in the irreducible sector
 						// [CVC]_{IJKL}+=[CV]_{IK,L}C^L_{LJ}
 						const Tensor<Tdata>& C_L_LJ = tools.get_Ds_ab(Label::ab::b, L, J);
 						// (ika) * (alj) = (iklj) -> (ijkl)
@@ -180,9 +184,11 @@ for K
 		{
 			for (TAC J : list_J)	//term 3
 			{
+				if (this->filter_atom->filter_for1(Label::ab_ab::a0b0_a1b2, J))	continue; // restrict J in the irreducible sector
 				const Tensor<Tdata>& V_KJ = tools.get_Ds_ab(Label::ab::a0b0, K, J);
 				for (TA I : list_I)
 				{
+					if (this->filter_atom->filter_for32(Label::ab_ab::a0b0_a2b2, I, J, J))	continue; // restrict (I, J) in the irreducible sector
 					const Tensor<Tdata>& C_K_KI = tools.get_Ds_ab(Label::ab::a, K, I);
 					//[CV]_{KI,J}=C^K_{KI}V_{KJ}
 					const Tensor<Tdata> CV_KI_J = Tensor_Multiply::x1x2y1_ax1x2_ay1(C_K_KI, V_KJ);
@@ -202,7 +208,7 @@ for K
 				LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
 			}
 			// if(memory_not_enough)
-			// LRI_Cal_Aux::add_Ds_omp_wait_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
+			LRI_Cal_Aux::add_Ds_omp_wait_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
 		}
 
 #pragma omp for schedule(static) collapse(2) nowait
@@ -214,11 +220,13 @@ for K
 				const TC& R_KL = (L.second - K.second) % period;
 				for (TA I : list_I)
 				{
+					if (this->filter_atom->filter_for1(Label::ab_ab::a0b0_a2b2, I))	continue; // restrict I in the irreducible sector
 					const Tensor<Tdata>& C_K_KI = tools.get_Ds_ab(Label::ab::a, K, I);
 					// CV_{IK,L}: a1a2b0 = a0a1a2 * a0b0
 					const Tensor<Tdata> CV_KI_L = Tensor_Multiply::x1x2y1_ax1x2_ay1(C_K_KI, V_KL);
 					for (TAC J : list_J)
 					{
+						if (this->filter_atom->filter_for32(Label::ab_ab::a0b0_a2b2, I, J, J))	continue; // restrict (I, J) in the irreducible sector
 						// [CVC]_{IJKL}+=[CV]_{IK,L}C^L_{LJ}
 						const Tensor<Tdata>& C_L_LJ = tools.get_Ds_ab(Label::ab::b, L, J);
 						// (kia) * (alj) = (kilj) -> (ijkl)
@@ -268,9 +276,11 @@ LRI<TA, Tcell, Ndim, Tdata>::constract_cvc_ds(
 	for (auto& map_i : cvc)
 	{
 		const TA& I = map_i.first;
+		if (this->filter_atom->filter_for1(Label::ab_ab::a0b0_a2b2, I))	continue; // restrict I in the irreducible sector
 		for (auto& map_j : map_i.second)
 		{
 			const TAC& J = map_j.first;
+			if (this->filter_atom->filter_for32(Label::ab_ab::a0b0_a2b2, I, J, J))	continue; // restrict (I, J) in the irreducible sector
 			// init H_IJ
 			for (auto& map_k : map_j.second)
 			{
