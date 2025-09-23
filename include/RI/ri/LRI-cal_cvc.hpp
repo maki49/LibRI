@@ -116,9 +116,9 @@ for K
 		// 		}
 
 		// calculate
+#pragma omp for schedule(static) collapse(2) nowait
 		for (TA I : list_I)
 		{
-#pragma omp for schedule(dynamic) nowait
 			for (TAC J : list_J)	 //	term 1
 			{
 				const Tensor<Tdata>& V_IJ = tools.get_Ds_ab(Label::ab::a0b0, I, J);
@@ -141,11 +141,14 @@ for K
 							Tensor_Multiply::x0x1y1y2_x0x1a_ay1y2(CV_IK_J, C_J_JL).permute_from({ 0,2,1,3 }),
 							cvc_thread[I][J][K.first][{L.first, R_KL}]);
 					}
-					LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
+					// if(memory_not_enough) add_Ds_omp_wait_map
 				}
-				LRI_Cal_Aux::add_Ds_omp_wait_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
+				LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
 			}
-#pragma omp for schedule(dynamic) nowait
+		}
+#pragma omp for schedule(static) collapse(2) nowait
+		for (TA I : list_I)
+		{
 			for (TAC L : list_L) // term 2
 			{
 				const Tensor<Tdata>& V_IL = tools.get_Ds_ab(Label::ab::a0b0, I, L);
@@ -166,13 +169,13 @@ for K
 							Tensor_Multiply::x0x1y1y2_x0x1a_ay1y2(CV_IK_L, C_L_LJ).permute_from({ 0,3,1,2 }),
 							cvc_thread[I][J][K.first][{L.first, R_KL}]);
 					}
-					LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
 				}
-				LRI_Cal_Aux::add_Ds_omp_wait_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
+				LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
 			}
+			// if(memory_not_enough) add_Ds_omp_wait_map
 		}
 
-#pragma omp for schedule(dynamic) nowait
+#pragma omp for schedule(static) collapse(2) nowait
 		for (TAC K : list_K)
 		{
 			for (TAC J : list_J)	//term 3
@@ -198,6 +201,13 @@ for K
 				}
 				LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
 			}
+			// if(memory_not_enough)
+			// LRI_Cal_Aux::add_Ds_omp_wait_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
+		}
+
+#pragma omp for schedule(static) collapse(2) nowait
+		for (TAC K : list_K)
+		{
 			for (TAC L : list_L) // term 4
 			{
 				const Tensor<Tdata>& V_KL = tools.get_Ds_ab(Label::ab::a0b0, K, L);
@@ -221,8 +231,9 @@ for K
 				}
 				LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
 			}
-			LRI_Cal_Aux::add_Ds_omp_wait_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
+			// if(memory_not_enough) add_Ds_omp_wait_map
 		}
+		LRI_Cal_Aux::add_Ds_omp_wait_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
 	} // end #pragma omp parallel
 
 	LRI_Cal_Aux::destroy_lock_result(lock_cvc_result_add_map, cvc);
