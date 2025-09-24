@@ -12,6 +12,7 @@
 #include "/home/fortneu49/abacus-fix/abacus-develop/source/source_base/timer.h"
 #include "/home/fortneu49/abacus-fix/abacus-develop/source/source_base/tool_title.h"
 #include <omp.h>
+#include <malloc.h>
 #ifdef __MKL_RI
 #include <mkl_service.h>
 #endif
@@ -263,6 +264,7 @@ for K
   #endif
 
 	ModuleBase::timer::tick("LRI", "cal_cvc");
+	malloc_trim(0);
 	return cvc;
 }	// end LRI::cal_cvc
 
