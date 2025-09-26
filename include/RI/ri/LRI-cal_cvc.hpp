@@ -121,18 +121,21 @@ for K
 		for (TA I : list_I)
 		{
 			if (this->filter_atom->filter_for1(Label::ab_ab::a0b0_a2b2, I))	continue; // restrict I in the irreducible sector
+			auto& cvc_thread_I = cvc_thread[I];
 			for (TAC J : list_J)	 //	term 1
 			{
 				if (this->filter_atom->filter_for32(Label::ab_ab::a0b0_a2b2, I, J, J))	continue; // restrict (I, J) in the irreducible sector
 				const Tensor<Tdata>& V_IJ = tools.get_Ds_ab(Label::ab::a0b0, I, J);
 				if (V_IJ.empty()) continue;
 				// symmetry: check if (I, J) in irreducible sector
+				auto& cvc_thread_IJ = cvc_thread[I][J];
 				for (TAC K : list_K)
 				{
 					const Tensor<Tdata>& C_I_IK = tools.get_Ds_ab(Label::ab::a, I, K);
 					if (C_I_IK.empty()) continue;
 					// CV_{IK,J}=C^I_{IK}V_{IJ}
 					const Tensor<Tdata> CV_IK_J = Tensor_Multiply::x1x2y1_ax1x2_ay1(C_I_IK, V_IJ);
+					auto& cvc_thread_IJK = cvc_thread_IJ[K.first];
 					for (TAC L : list_L)
 					{
 						const TC R_KL = (L.second - K.second) % period;
@@ -145,7 +148,7 @@ for K
 						// cvc_thread[I][J][K.first][{L.first, R_KL}] += Tensor_Multiply::x0x1y1y2_x0x1a_ay1y2(CV_IK_J, C_J_JL).permute_from({ 0,2,1,3 });
 						LRI_Cal_Aux::add_Ds(
 							Tensor_Multiply::x0x1y1y2_x0x1a_ay1y2(CV_IK_J, C_J_JL).permute_from({ 0,2,1,3 }),
-							cvc_thread[I][J][K.first][{L.first, R_KL}]);
+							cvc_thread_IJK[{L.first, R_KL}]);
 					}
 				}
 				LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
@@ -157,6 +160,7 @@ for K
 		for (TA I : list_I)
 		{
 			if (this->filter_atom->filter_for1(Label::ab_ab::a0b0_a2b2, I))	continue;
+			auto& cvc_thread_I = cvc_thread[I];
 			for (TAC L : list_L) // term 2
 			{
 				const Tensor<Tdata>& V_IL = tools.get_Ds_ab(Label::ab::a0b0, I, L);
@@ -179,7 +183,7 @@ for K
 						// cvc_thread[I][J][K.first][{L.first, R_KL}] += Tensor_Multiply::x0x1y1y2_x0x1a_ay1y2(CV_IK_L, C_L_LJ).permute_from({ 0,3,1,2 });
 						LRI_Cal_Aux::add_Ds(
 							Tensor_Multiply::x0x1y1y2_x0x1a_ay1y2(CV_IK_L, C_L_LJ).permute_from({ 0,3,1,2 }),
-							cvc_thread[I][J][K.first][{L.first, R_KL}]);
+							cvc_thread_I[J][K.first][{L.first, R_KL}]);
 					}
 				}
 				LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
@@ -202,6 +206,7 @@ for K
 					if (C_K_KI.empty()) continue;
 					//[CV]_{KI,J}=C^K_{KI}V_{KJ}
 					const Tensor<Tdata> CV_KI_J = Tensor_Multiply::x1x2y1_ax1x2_ay1(C_K_KI, V_KJ);
+					auto& cvc_thread_IJK = cvc_thread[I][J][K.first];
 					for (TAC L : list_L)
 					{
 						const TC& R_KL = (L.second - K.second) % period;
@@ -213,7 +218,7 @@ for K
 						// cvc_thread[I][J][K.first][{L.first, R_KL}] += Tensor_Multiply::x0x1y1y2_x0x1a_ay1y2(CV_KI_J, C_J_JL).permute_from({ 1,2,0,3 });
 						LRI_Cal_Aux::add_Ds(
 							Tensor_Multiply::x0x1y1y2_x0x1a_ay1y2(CV_KI_J, C_J_JL).permute_from({ 1,2,0,3 }),
-							cvc_thread[I][J][K.first][{L.first, R_KL}]);
+							cvc_thread_IJK[{L.first, R_KL}]);
 					}
 				}
 				LRI_Cal_Aux::add_Ds_omp_try_map(cvc_thread, cvc, lock_cvc_result_add_map, 1.0);
