@@ -9,8 +9,6 @@
 #include "LRI_Cal_Aux.h"
 #include "../global/Array_Operator.h"
 #include "../global/Tensor_Multiply.h"
-#include "/home/fortneu49/abacus-fix/abacus-develop/source/source_base/timer.h"
-#include "/home/fortneu49/abacus-fix/abacus-develop/source/source_base/tool_title.h"
 #include <omp.h>
 #include <malloc.h>
 #ifdef __MKL_RI
@@ -24,8 +22,6 @@ template<typename TA, typename Tcell, std::size_t Ndim, typename Tdata>
 std::map<TA, std::map<std::pair<TA, std::array<Tcell, Ndim>>, std::map<TA, std::map<std::pair<TA, std::array<Tcell, Ndim>>, Tensor<Tdata>>>>>
 LRI<TA, Tcell, Ndim, Tdata>::cal_cvc()
 {
-	ModuleBase::TITLE("LRI", "cal_cvc");
-	ModuleBase::timer::tick("LRI", "cal_cvc");
 	using namespace Array_Operator;
 
 	const Data_Pack_Wrapper<TA,TC,Tdata> data_wrapper(this->data_pool, this->data_ab_name);
@@ -267,7 +263,6 @@ for K
 	mkl_set_num_threads(mkl_threads);
   #endif
 
-	ModuleBase::timer::tick("LRI", "cal_cvc");
 	malloc_trim(0);
 	return cvc;
 }	// end LRI::cal_cvc
@@ -277,8 +272,6 @@ std::map<TA, std::map<std::pair<TA, std::array<Tcell, Ndim>>, Tensor<Tdata>>>
 LRI<TA, Tcell, Ndim, Tdata>::constract_cvc_ds(
 	const std::map<TA, std::map<TAC, std::map<TA, std::map<TAC, Tensor<Tdata>>>>>& cvc)
 {
-	ModuleBase::TITLE("LRI", "constract_cvc_ds");
-	ModuleBase::timer::tick("LRI", "constract_cvc_ds");
 	const Data_Pack_Wrapper<TA, TC, Tdata> data_wrapper(this->data_pool, this->data_ab_name);
 	const LRI_Cal_Tools<TA, TC, Tdata> tools(this->period, this->data_pool, this->data_ab_name);
 
@@ -315,7 +308,6 @@ LRI<TA, Tcell, Ndim, Tdata>::constract_cvc_ds(
 			}
 		}
 	}
-	ModuleBase::timer::tick("LRI", "constract_cvc_ds");
 	return Hs;
 }
 
