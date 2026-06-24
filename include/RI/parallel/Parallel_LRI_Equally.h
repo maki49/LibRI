@@ -6,6 +6,7 @@
 #pragma once
 
 #include "Parallel_LRI.h"
+#include "../global/MPI_Wrapper-class.h"
 
 namespace RI
 {
@@ -45,6 +46,16 @@ class Parallel_LRI_Equally: public Parallel_LRI<TA,Tcell,Ndim,Tdata>
 
 	MPI_Comm mpi_comm;
 	std::array<Tcell,Ndim> period;
+
+	MPI_Wrapper::mpi_comm node_comm;		// intra-node communicator (MPI_COMM_TYPE_SHARED)
+
+	// node-union atom lists: union of all on-node processes' per-process lists
+	// used by comm_tensors_map2 on the node root to collect data for the whole node
+	std::unordered_map<Label::Aab_Aab, List_A<TA,TAC>> list_A_node;
+	std::vector<TA>  list_Aa01_node;
+	std::vector<TAC> list_Aa2_node;
+	std::vector<TAC> list_Ab01_node;
+	std::vector<TAC> list_Ab2_node;
 
   public:	// private:
 	void set_parallel_loop4(

@@ -24,9 +24,12 @@ class Tensor
 public:
 	Shape_Vector shape;
 	std::shared_ptr<std::valarray<T>> data=nullptr;
+	T* raw_ptr_ = nullptr;					// non-null when data lives in MPI shared window (non-owning)
+	std::shared_ptr<void> anchor_;			// keeps SharedMemoryPool alive for the non-owning path
 
 	explicit inline Tensor (const Shape_Vector &shape_in);
 	explicit inline Tensor (const Shape_Vector &shape_in, std::shared_ptr<std::valarray<T>> data_in);
+	explicit inline Tensor (const Shape_Vector &shape_in, T* raw_ptr_in, const std::shared_ptr<void> &anchor_in);
 
 	Tensor()=default;
 	Tensor(const Tensor<T> &t_in)=default;
@@ -50,7 +53,7 @@ public:
 	// if(p==std::numeric_limits<double>::max())    ||d||_max = max_i |d_i|
 	Global_Func::To_Real_t<T> norm(const double p) const;
 
-	T* ptr()const{ return &(*this->data)[0]; }
+	T* ptr()const{ return raw_ptr_ ? raw_ptr_ : &(*this->data)[0]; }
 
 	bool empty() const { return shape.empty(); }
 

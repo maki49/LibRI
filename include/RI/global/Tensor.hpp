@@ -39,11 +39,22 @@ Tensor<T>::Tensor (const Shape_Vector &shape_in, std::shared_ptr<std::valarray<T
 }
 
 template<typename T>
+Tensor<T>::Tensor (const Shape_Vector &shape_in, T* raw_ptr_in, const std::shared_ptr<void> &anchor_in)
+{
+	assert(raw_ptr_in != nullptr);
+	this->shape = shape_in;
+	this->raw_ptr_ = raw_ptr_in;
+	this->anchor_ = anchor_in;
+}
+
+template<typename T>
 Tensor<T> Tensor<T>::reshape (const Shape_Vector &shape_in) const
 {
 	assert(
 		std::accumulate(shape_in.begin(), shape_in.end(), static_cast<std::size_t>(1), std::multiplies<std::size_t>())
 		== this->shape.get_shape_all() );
+	if(this->raw_ptr_)
+		return Tensor<T>(shape_in, this->raw_ptr_, this->anchor_);
 	return Tensor<T>(shape_in, this->data);
 }
 
@@ -51,7 +62,10 @@ template<typename T>
 Tensor<T> Tensor<T>::copy() const
 {
 	Tensor<T> t(this->shape);
-	*t.data = *this->data;
+	if(this->raw_ptr_)
+		std::copy(this->raw_ptr_, this->raw_ptr_ + this->shape.get_shape_all(), t.ptr());
+	else
+		*t.data = *this->data;
 	return t;
 }
 
@@ -61,6 +75,7 @@ T& Tensor<T>::operator() (const std::size_t i0) const
 {
 	assert(this->shape.size()==1);
 	assert(i0>=0);	assert(i0<this->shape[0]);
+	if(this->raw_ptr_)	return this->raw_ptr_[i0];
 	return (*this->data)[i0];
 }
 template<typename T>
@@ -69,6 +84,7 @@ T& Tensor<T>::operator() (const std::size_t i0, const std::size_t i1) const
 	assert(this->shape.size()==2);
 	assert(i0>=0);	assert(i0<this->shape[0]);
 	assert(i1>=0);	assert(i1<this->shape[1]);
+	if(this->raw_ptr_)	return this->raw_ptr_[i0*this->shape[1]+i1];
 	return (*this->data)[i0*this->shape[1]+i1];
 }
 template<typename T>
@@ -78,6 +94,7 @@ T& Tensor<T>::operator() (const std::size_t i0, const std::size_t i1, const std:
 	assert(i0>=0);	assert(i0<this->shape[0]);
 	assert(i1>=0);	assert(i1<this->shape[1]);
 	assert(i2>=0);	assert(i2<this->shape[2]);
+	if(this->raw_ptr_)	return this->raw_ptr_[(i0*this->shape[1]+i1)*this->shape[2]+i2];
 	return (*this->data)[(i0*this->shape[1]+i1)*this->shape[2]+i2];
 }
 template<typename T>
@@ -88,6 +105,7 @@ T& Tensor<T>::operator() (const std::size_t i0, const std::size_t i1, const std:
 	assert(i1>=0);	assert(i1<this->shape[1]);
 	assert(i2>=0);	assert(i2<this->shape[2]);
 	assert(i3>=0);	assert(i3<this->shape[3]);
+	if(this->raw_ptr_)	return this->raw_ptr_[((i0*this->shape[1]+i1)*this->shape[2]+i2)*this->shape[3]+i3];
 	return (*this->data)[((i0*this->shape[1]+i1)*this->shape[2]+i2)*this->shape[3]+i3];
 }
 

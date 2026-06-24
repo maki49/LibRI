@@ -7,11 +7,13 @@
 
 #include "../global/Tensor.h"
 #include "../global/Global_Func-1.h"
+#include "../global/SharedMemoryPool.h"
 #include "Label.h"
 
 #include <vector>
 #include <map>
 #include <set>
+#include <memory>
 
 namespace RI
 {
@@ -24,6 +26,7 @@ struct Data_Pack
 
 	std::map<TA, std::map<TAC, Tensor<Tdata>>> Ds_ab;					// Ds_ab[A0][{A1,C1}]
 	std::vector<std::set<TA>> index_Ds_ab;								// index_Ds_ab[0]=A1
+	std::shared_ptr<SharedMemoryPool<Tdata>> shm_pool;					// non-null when Ds_ab uses shared-window Tensors
 };
 
 
