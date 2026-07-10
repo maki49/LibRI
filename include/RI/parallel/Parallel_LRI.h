@@ -42,8 +42,11 @@ class Parallel_LRI
 		const std::map<TA,Tatom_pos> &atoms_pos,
 		const std::array<Tatom_pos,Ndim> &latvec,
 		const std::array<Tcell,Ndim> &period,
+		const std::map<TA,std::size_t> &atoms_nao,
 		const std::set<Label::Aab_Aab> &labels) =0;
 	// atom_pos[iA][{cell}] = atoms_pos[iA] + \sum_x cell_x * latvec[cell_x]
+	// atoms_nao[iA] = the number of atomic orbitals of atom iA, used to balance the load
+	//                 across processes. Empty => balance the atom count instead.
 
 	//template<typename Tdata>
 //	virtual std::map<TA,std::map<TAC,Tensor<Tdata>>> comm_tensors_map2(

@@ -23,6 +23,7 @@ class Parallel_LRI_Equally: public Parallel_LRI<TA,Tcell,Ndim,Tdata>
 		const std::map<TA,Tatom_pos> &atoms_pos,
 		const std::array<Tatom_pos,Ndim> &latvec,
 		const std::array<Tcell,Ndim> &period_in,
+		const std::map<TA,std::size_t> &atoms_nao,
 		const std::set<Label::Aab_Aab> &labels) override;
 
 //	std::map<TA,std::map<TAC,Tensor<Tdata>>> comm_tensors_map2(
@@ -48,9 +49,11 @@ class Parallel_LRI_Equally: public Parallel_LRI<TA,Tcell,Ndim,Tdata>
 
   public:	// private:
 	void set_parallel_loop4(
-		const std::vector<TA> &atoms_vec);
+		const std::vector<TA> &atoms_vec,
+		const std::map<TA,std::size_t> &atoms_nao);
 	void set_parallel_loop3(
 		const std::vector<TA> &atoms_vec,
+		const std::map<TA,std::size_t> &atoms_nao,
 		const std::set<Label::Aab_Aab> &labels);
 };
 

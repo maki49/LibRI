@@ -21,12 +21,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::set_parallel(
 	const std::map<TA,Tatom_pos> &atoms_pos,
 	const std::array<Tatom_pos,Ndim> &latvec,
 	const std::array<Tcell,Ndim> &period_in,
-	const std::vector<Label::ab_ab> &labels_all)
+	const std::vector<Label::ab_ab> &labels_all,
+	const std::map<TA,std::size_t> &atoms_nao)
 {
 	this->mpi_comm = mpi_comm_in;
 	this->period = period_in;
 	this->parallel->set_parallel(
-		this->mpi_comm, atoms_pos, latvec, this->period,
+		this->mpi_comm, atoms_pos, latvec, this->period, atoms_nao,
 		Label_Tools::to_Aab_Aab_set(labels_all));
 }
 

@@ -43,7 +43,11 @@ public:
 		const std::map<TA,Tatom_pos> &atoms_pos,
 		const std::array<Tatom_pos,Ndim> &latvec,
 		const std::array<Tcell,Ndim> &period_in,
-		const std::vector<Label::ab_ab> &labels_all_in);
+		const std::vector<Label::ab_ab> &labels_all_in,
+		const std::map<TA,std::size_t> &atoms_nao = {});
+			// atoms_nao[iA]: the number of atomic orbitals of atom iA.
+			// Processes are given equal sum(nao) rather than an equal atom count.
+			// Empty => balance the atom count instead.
 
 	void set_tensors_map2(
 		const std::map<TA, std::map<TAC, Tensor<Tdata>>> &Ds_local,

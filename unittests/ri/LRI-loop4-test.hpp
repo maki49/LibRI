@@ -38,6 +38,7 @@ namespace LRI_Loop4_Test
 			const std::map<TA,TatomR> &atomsR,
 			const std::array<TatomR,Ndim> &latvec,
 			const std::array<Tcell,Ndim> &period_in,
+			const std::map<TA,std::size_t> &atoms_nao,
 			const std::set<RI::Label::Aab_Aab> &labels) override
 		{
 			this->mpi_comm = mpi_comm_in;

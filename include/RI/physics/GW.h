@@ -33,7 +33,11 @@ public:
 		const MPI_Comm &mpi_comm,
 		const std::map<TA,Tatom_pos> &atoms_pos,
 		const std::array<Tatom_pos,Ndim> &latvec,
-		const std::array<Tcell,Ndim> &period);
+		const std::array<Tcell,Ndim> &period,
+		const std::map<TA,std::size_t> &atoms_nao = {});
+			// atoms_nao[iA]: the number of atomic orbitals of atom iA.
+			// Processes are given equal sum(nao) rather than an equal atom count.
+			// Empty => balance the atom count instead.
 
 	void set_symmetry(
 		const bool flag_symmetry,

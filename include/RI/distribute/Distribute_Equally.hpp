@@ -23,11 +23,15 @@ namespace Distribute_Equally
 		const std::vector<TA> &atoms,
 		const std::array<Tcell,Ndim> &period,
 		const std::size_t num_index,
-		const bool flag_task_repeatable)
+		const bool flag_task_repeatable,
+		const std::map<TA,std::size_t> &atoms_nao)
 	{
 		assert(num_index>=1);
 		using TAC = std::pair<TA,std::array<Tcell,Ndim>>;
 
+		// task_sizes 保持按个数统计：每一维用的是同一个原子集合，改按 sum(nao) 统计
+		// 只会给所有维乘上同一个公共因子，split_first 里 group_size 取的是它们的比值，
+		// 进程网格形状不变。只有下面 Divide_Atoms 的组内划分才需要加权。
 		const std::vector<std::size_t> task_sizes(num_index, atoms.size());
 		const std::vector<std::tuple<MPI_Wrapper::mpi_comm, std::size_t, std::size_t>>
 			comm_color_sizes = Split_Processes::split_all(mpi_comm, task_sizes);
@@ -42,13 +46,15 @@ namespace Distribute_Equally
 		atoms_split_list.first = Divide_Atoms::divide_atoms(
 			std::get<1>(comm_color_sizes[1]),
 			std::get<2>(comm_color_sizes[1]),
-			atoms);
+			atoms,
+			atoms_nao);
 		for(std::size_t i=1; i<num_index; ++i)
 			atoms_split_list.second[i-1] = Divide_Atoms::divide_atoms(
 				std::get<1>(comm_color_sizes[i+1]),
 				std::get<2>(comm_color_sizes[i+1]),
 				atoms,
-				period);
+				period,
+				atoms_nao);
 
 
 		return atoms_split_list;
@@ -63,11 +69,13 @@ namespace Distribute_Equally
 		const std::vector<TA> &atoms,
 		const std::array<Tcell,Ndim> &period,
 		const std::size_t num_index,
-		const bool flag_task_repeatable)
+		const bool flag_task_repeatable,
+		const std::map<TA,std::size_t> &atoms_nao)
 	{
 		assert(num_index>=1);
 		using TAC = std::pair<TA,std::array<Tcell,Ndim>>;
 
+		// task_sizes 保持按个数统计，理由见 distribute_atoms
 		const std::size_t task_size_period = atoms.size() * std::accumulate( period.begin(), period.end(), 1, std::multiplies<Tcell>() );
 		std::vector<std::size_t> task_sizes(num_index, task_size_period);
 		task_sizes[0] = atoms.size();
@@ -84,13 +92,15 @@ namespace Distribute_Equally
 		atoms_split_list.first = Divide_Atoms::divide_atoms(
 			std::get<1>(comm_color_sizes[1]),
 			std::get<2>(comm_color_sizes[1]),
-			atoms);
+			atoms,
+			atoms_nao);
 		for(std::size_t i=1; i<num_index; ++i)
 			atoms_split_list.second[i-1] = Divide_Atoms::divide_atoms_periods(
 				std::get<1>(comm_color_sizes[i+1]),
 				std::get<2>(comm_color_sizes[i+1]),
 				atoms,
-				period);
+				period,
+				atoms_nao);
 		return atoms_split_list;
 	}
 
@@ -102,11 +112,13 @@ namespace Distribute_Equally
 		const std::vector<TA> &atoms,
 		const std::array<Tcell,Ndim> &period,
 		const std::size_t num_index,
-		const bool flag_task_repeatable)
+		const bool flag_task_repeatable,
+		const std::map<TA,std::size_t> &atoms_nao)
 	{
 		assert(num_index>=1);
 		using TAC = std::pair<TA,std::array<Tcell,Ndim>>;
 
+		// task_sizes 保持按个数统计，理由见 distribute_atoms
 		const std::size_t task_size_period = atoms.size() * std::accumulate( period.begin(), period.end(), 1, std::multiplies<Tcell>() );
 		std::vector<std::size_t> task_sizes(num_index, task_size_period);
 		const std::vector<std::tuple<MPI_Wrapper::mpi_comm, std::size_t, std::size_t>>
@@ -123,7 +135,8 @@ namespace Distribute_Equally
 				std::get<1>(comm_color_sizes[i+1]),
 				std::get<2>(comm_color_sizes[i+1]),
 				atoms,
-				period);
+				period,
+				atoms_nao);
 		return atoms_split_list;
 	}
 }

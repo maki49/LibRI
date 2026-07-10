@@ -42,6 +42,8 @@ namespace Test_All
 		Divide_Atoms_Test::test_divide_atoms();
 		Divide_Atoms_Test::test_divide_atoms_with_period();
 		Divide_Atoms_Test::test_divide_atoms_periods();
+		Divide_Atoms_Test::test_divide_atoms_nao();
+		Divide_Atoms_Test::test_divide_atoms_periods_nao();
 
 		Split_Processes_Test::test_split_all(argc, argv);
 

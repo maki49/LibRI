@@ -19,25 +19,27 @@ void Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>::set_parallel(
 	const std::map<TA,Tatom_pos> &atoms_pos,
 	const std::array<Tatom_pos,Ndim> &latvec,
 	const std::array<Tcell,Ndim> &period_in,
+	const std::map<TA,std::size_t> &atoms_nao,
 	const std::set<Label::Aab_Aab> &labels)
 {
 	this->mpi_comm = mpi_comm_in;
 	this->period = period_in;
 	const std::vector<TA> atoms_vec = Global_Func::map_key_to_vec(atoms_pos);
 
-	this->set_parallel_loop4(atoms_vec);
-	this->set_parallel_loop3(atoms_vec, labels);
+	this->set_parallel_loop4(atoms_vec, atoms_nao);
+	this->set_parallel_loop3(atoms_vec, atoms_nao, labels);
 }
 
 template<typename TA, typename Tcell, std::size_t Ndim, typename Tdata>
 void Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>::set_parallel_loop4(
-	const std::vector<TA> &atoms_vec)
+	const std::vector<TA> &atoms_vec,
+	const std::map<TA,std::size_t> &atoms_nao)
 {
 	constexpr std::size_t num_index = 4;
 
 	const std::pair<std::vector<TA>, std::vector<std::vector<std::pair<TA,TC>>>>
 		atoms_split_list = Distribute_Equally::distribute_atoms_periods(
-			this->mpi_comm, atoms_vec, this->period, num_index, false);
+			this->mpi_comm, atoms_vec, this->period, num_index, false, atoms_nao);
 
 	this->list_Aa01 = atoms_split_list.first;
 	this->list_Aa2  = atoms_split_list.second[0];
@@ -48,6 +50,7 @@ void Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>::set_parallel_loop4(
 template<typename TA, typename Tcell, std::size_t Ndim, typename Tdata>
 void Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>::set_parallel_loop3(
 	const std::vector<TA> &atoms_vec,
+	const std::map<TA,std::size_t> &atoms_nao,
 	const std::set<Label::Aab_Aab> &labels)
 {
 	constexpr std::size_t num_index = 2;
@@ -55,10 +58,10 @@ void Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>::set_parallel_loop3(
 
 	const std::pair<std::vector<TA>, std::vector<std::vector<std::pair<TA,TC>>>>
 		atoms_split_list1 = Distribute_Equally::distribute_atoms_periods(
-			this->mpi_comm, atoms_vec, this->period, num_index, false);
+			this->mpi_comm, atoms_vec, this->period, num_index, false, atoms_nao);
 	const std::vector<std::vector<std::pair<TA,TC>>>
 		atoms_split_list2 = Distribute_Equally::distribute_periods(
-			this->mpi_comm, atoms_vec, this->period, num_index, false);
+			this->mpi_comm, atoms_vec, this->period, num_index, false, atoms_nao);
 	for(const Label::Aab_Aab &label : labels)
 	{
 		List_A<TA,TAC> &atoms = this->list_A[label];
