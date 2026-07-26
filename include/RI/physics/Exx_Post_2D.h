@@ -23,8 +23,7 @@ public:
 	void set_parallel(
 		const MPI_Comm &mpi_comm_in,
 		const std::map<TA,Tatom_pos> &atoms_pos,
-		const TC &period,
-		const std::map<TA,std::size_t> &atoms_nao = {});
+		const TC &period);
 
 	std::map<TA,std::map<TAC,Tensor<Tdata>>>
 	set_tensors_map2( const std::map<TA,std::map<TAC,Tensor<Tdata>>> &Ds_in ) const;

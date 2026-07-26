@@ -26,8 +26,7 @@ template<typename TA, typename TC, typename Tdata> template<typename Tatom_pos>
 void Exx_Post_2D<TA,TC,Tdata>::set_parallel(
 	const MPI_Comm &mpi_comm_in,
 	const std::map<TA,Tatom_pos> &atoms_pos,
-	const TC &period,
-	const std::map<TA,std::size_t> &atoms_nao)
+	const TC &period)
 {
 	this->mpi_comm = mpi_comm_in;
 
@@ -36,7 +35,7 @@ void Exx_Post_2D<TA,TC,Tdata>::set_parallel(
 
 	const std::pair<std::vector<TA>, std::vector<std::vector<TAC>>>
 		atoms_split_list = Distribute_Equally::distribute_atoms_periods(
-			this->mpi_comm, atoms_vec, period, num_index, false, atoms_nao);
+			this->mpi_comm, atoms_vec, period, num_index, false);
 
 	this->list_Aa = Global_Func::to_set(atoms_split_list.first);
 	this->list_Ab = Global_Func::to_set(atoms_split_list.second[0]);

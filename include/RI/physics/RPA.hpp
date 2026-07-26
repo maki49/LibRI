@@ -19,13 +19,11 @@ void RPA<TA,Tcell,Ndim,Tdata>::set_parallel(
 	const MPI_Comm &mpi_comm,
 	const std::map<TA,Tatom_pos> &atoms_pos,
 	const std::array<Tatom_pos,Ndim> &latvec,
-	const std::array<Tcell,Ndim> &period,
-	const std::map<TA,std::size_t> &atoms_nao)
+	const std::array<Tcell,Ndim> &period)
 {
 	this->lri.set_parallel(
 		mpi_comm, atoms_pos, latvec, period,
-		{Label::ab_ab::a1b1_a2b2, Label::ab_ab::a1b2_a2b1},
-		atoms_nao);
+		{Label::ab_ab::a1b1_a2b2, Label::ab_ab::a1b2_a2b1});
 	this->flag_finish.stru = true;
 }
 
