@@ -118,22 +118,22 @@ namespace Communicate_Tensors_Map_Judge
 	}
 
 
-	template<typename TA, typename TC, typename Tdata>
-	std::map<TA,std::map<std::pair<TA,TC>,Tensor<Tdata>>>
-	comm_map2_combine_origin_period(
-		const MPI_Comm &mpi_comm,
-		const std::map<TA,std::map<std::pair<TA,TC>,Tensor<Tdata>>> &Ds_in,
+	template<typename TA, typename TC>
+	using Combined_Judge = Communicate_Map_Combine::Judge_Map2_Combine2<
+			TA, TC,
+			Comm::Communicate_Map::Judge_Map2,
+			Communicate_Map_Period::Judge_Map2_Period
+		>;
+
+	template<typename TA, typename TC>
+	Combined_Judge<TA,TC> make_combined_judge(
 		const std::tuple<
 			std::vector<std::tuple< std::set<TA>, std::set<std::pair<TA,TC>> >>,
 			std::vector<std::tuple< std::set<std::pair<TA,TC>>, std::set<std::pair<TA,TC>> >>
 			> &s_list,
 		const TC &period)
 	{
-		Communicate_Map_Combine::Judge_Map2_Combine2<
-			TA, TC,
-			Comm::Communicate_Map::Judge_Map2,
-			Communicate_Map_Period::Judge_Map2_Period
-		> judge_combine;
+		Combined_Judge<TA,TC> judge_combine;
 
 		std::get<0>(judge_combine.judge_list).resize(std::get<0>(s_list).size());
 		for(std::size_t j=0; j<std::get<0>(s_list).size(); ++j)
@@ -150,7 +150,21 @@ namespace Communicate_Tensors_Map_Judge
 			std::get<1>(judge_combine.judge_list)[j].period = period;
 		}
 
-		return Communicate_Tensors_Map::comm_map2(mpi_comm, Ds_in, judge_combine);
+		return judge_combine;
+	}
+
+	template<typename TA, typename TC, typename Tdata>
+	std::map<TA,std::map<std::pair<TA,TC>,Tensor<Tdata>>>
+	comm_map2_combine_origin_period(
+		const MPI_Comm &mpi_comm,
+		const std::map<TA,std::map<std::pair<TA,TC>,Tensor<Tdata>>> &Ds_in,
+		const std::tuple<
+			std::vector<std::tuple< std::set<TA>, std::set<std::pair<TA,TC>> >>,
+			std::vector<std::tuple< std::set<std::pair<TA,TC>>, std::set<std::pair<TA,TC>> >>
+			> &s_list,
+		const TC &period)
+	{
+		return Communicate_Tensors_Map::comm_map2(mpi_comm, Ds_in, make_combined_judge<TA,TC>(s_list, period));
 	}
 }
 

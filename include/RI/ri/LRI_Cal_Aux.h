@@ -28,9 +28,9 @@ namespace LRI_Cal_Aux
 	{
 		assert(D.shape.size()==3);
 		if(flag_01_2)
-			return Tensor<Tdata>( {D.shape[0]*D.shape[1], D.shape[2]}, D.data );
+			return D.reshape({D.shape[0]*D.shape[1], D.shape[2]});
 		else
-			return Tensor<Tdata>( {D.shape[0], D.shape[1]*D.shape[2]}, D.data );
+			return D.reshape({D.shape[0], D.shape[1]*D.shape[2]});
 	}
 
 	template<typename Tdata>

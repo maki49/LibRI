@@ -52,13 +52,31 @@ void LRI<TA,Tcell,Ndim,Tdata>::set_tensors_map2(
 		{"threshold_filter", 0.0}};
 	const std::map<std::string, double> para = Map_Operator::cover(para_default, para_in);
 
+	const std::string save_name = save_name_in != "default"
+		? save_name_in : Label_Tools::get_name(label_list);
+	std::unique_ptr<Node_Shared::Communicator> shared_node;
+	Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata> *shared_parallel = nullptr;
+	#ifdef __GPU_RI
+	if(para.at("flag_comm") && this->gpu_shared_names.count(save_name))
+	{
+		shared_parallel = dynamic_cast<Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>*>(this->parallel.get());
+		if(!shared_parallel) throw std::invalid_argument("Shared GPU inputs require Parallel_LRI_Equally communication");
+		shared_node.reset(new Node_Shared::Communicator(this->mpi_comm));
+	}
+	#endif
+
 	std::map<TA, std::map<TAC, Tensor<Tdata>>> Ds_new =
 		para.at("flag_period")
 		? RI_Tools::cal_period(Ds_local, this->period)
 		: Ds_local;
 
 	if(para.at("flag_comm"))
-		Ds_new = this->parallel->comm_tensors_map2(label_list, std::move(Ds_new));
+	{
+		if(shared_node && shared_node->size > 1)
+			Ds_new = shared_parallel->comm_tensors_map2_node(label_list, Ds_new, *shared_node);
+		else
+			Ds_new = this->parallel->comm_tensors_map2(label_list, Ds_new);
+	}
 
 	if(para.at("flag_filter"))
 	{
@@ -68,10 +86,9 @@ void LRI<TA,Tcell,Ndim,Tdata>::set_tensors_map2(
 		Ds_new = RI_Tools::filter(std::move(Ds_new), filter_func_list, para.at("threshold_filter"));
 	}
 
-	const std::string save_name =
-		save_name_in!="default"
-		? save_name_in
-		: Label_Tools::get_name(label_list);
+	if(shared_node && shared_node->size > 1)
+		Ds_new = Node_Shared::share_map(*shared_node, std::move(Ds_new), shared_parallel->tensor_judge(label_list));
+
 	#ifdef __GPU_RI
 	this->invalidate_gpu_resident_data(save_name);
 	#endif

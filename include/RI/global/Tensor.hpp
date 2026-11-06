@@ -6,6 +6,7 @@
 #pragma once
 
 #include "Tensor.h"
+#include <algorithm>
 #include "Blas_Interface-Tensor.h"
 
 #include <complex>
@@ -40,19 +41,29 @@ Tensor<T>::Tensor (const Shape_Vector &shape_in, std::shared_ptr<std::valarray<T
 }
 
 template<typename T>
+Tensor<T>::Tensor(const Shape_Vector &shape_in, T *ptr_in, std::shared_ptr<void> owner)
+    : shape(shape_in), external_ptr(ptr_in), external_owner(std::move(owner))
+{
+    assert(external_owner && (ptr_in || shape_in.get_shape_all() == 0));
+}
+
+template<typename T>
 Tensor<T> Tensor<T>::reshape (const Shape_Vector &shape_in) const
 {
 	assert(
 		std::accumulate(shape_in.begin(), shape_in.end(), static_cast<std::size_t>(1), std::multiplies<std::size_t>())
 		== this->shape.get_shape_all() );
-	return Tensor<T>(shape_in, this->data);
+	Tensor<T> view(*this);
+	view.shape = shape_in;
+	return view;
 }
 
 template<typename T>
 Tensor<T> Tensor<T>::copy() const
 {
 	Tensor<T> t(this->shape);
-	*t.data = *this->data;
+	if(shape.get_shape_all())
+		std::copy(ptr(), ptr() + shape.get_shape_all(), t.ptr());
 	return t;
 }
 
@@ -62,7 +73,7 @@ T& Tensor<T>::operator() (const std::size_t i0) const
 {
 	assert(this->shape.size()==1);
 	assert(i0>=0);	assert(i0<this->shape[0]);
-	return (*this->data)[i0];
+	return ptr()[i0];
 }
 template<typename T>
 T& Tensor<T>::operator() (const std::size_t i0, const std::size_t i1) const
@@ -70,7 +81,7 @@ T& Tensor<T>::operator() (const std::size_t i0, const std::size_t i1) const
 	assert(this->shape.size()==2);
 	assert(i0>=0);	assert(i0<this->shape[0]);
 	assert(i1>=0);	assert(i1<this->shape[1]);
-	return (*this->data)[i0*this->shape[1]+i1];
+	return ptr()[i0*this->shape[1]+i1];
 }
 template<typename T>
 T& Tensor<T>::operator() (const std::size_t i0, const std::size_t i1, const std::size_t i2) const
@@ -79,7 +90,7 @@ T& Tensor<T>::operator() (const std::size_t i0, const std::size_t i1, const std:
 	assert(i0>=0);	assert(i0<this->shape[0]);
 	assert(i1>=0);	assert(i1<this->shape[1]);
 	assert(i2>=0);	assert(i2<this->shape[2]);
-	return (*this->data)[(i0*this->shape[1]+i1)*this->shape[2]+i2];
+	return ptr()[(i0*this->shape[1]+i1)*this->shape[2]+i2];
 }
 template<typename T>
 T& Tensor<T>::operator() (const std::size_t i0, const std::size_t i1, const std::size_t i2, const std::size_t i3) const
@@ -89,7 +100,7 @@ T& Tensor<T>::operator() (const std::size_t i0, const std::size_t i1, const std:
 	assert(i1>=0);	assert(i1<this->shape[1]);
 	assert(i2>=0);	assert(i2<this->shape[2]);
 	assert(i3>=0);	assert(i3<this->shape[3]);
-	return (*this->data)[((i0*this->shape[1]+i1)*this->shape[2]+i2)*this->shape[3]+i3];
+	return ptr()[((i0*this->shape[1]+i1)*this->shape[2]+i2)*this->shape[3]+i3];
 }
 
 template<typename T1, typename T2>
@@ -115,7 +126,8 @@ template<typename T>
 Tensor<T> Tensor<T>::operator-() const
 {
 	Tensor<T> t(this->shape);
-	*t.data = -*this->data;
+	if(!is_external()) { if(data) *t.data = -*data; }
+	else for(std::size_t i=0; i<shape.get_shape_all(); ++i) t.ptr()[i] = -ptr()[i];
 	return t;
 }
 
@@ -125,7 +137,8 @@ Tensor<T> operator+ (const Tensor<T> &t1, const Tensor<T> &t2)
 {
 	assert(same_shape(t1,t2));
 	Tensor<T> t(t1.shape);
-	*t.data = *t1.data + *t2.data;
+	if(!t1.is_external() && !t2.is_external()) *t.data = *t1.data + *t2.data;
+	else for(std::size_t i=0; i<t.shape.get_shape_all(); ++i) t.ptr()[i] = t1.ptr()[i] + t2.ptr()[i];
 	return t;
 }
 template<typename T>
@@ -133,7 +146,8 @@ Tensor<T> operator- (const Tensor<T> &t1, const Tensor<T> &t2)
 {
 	assert(same_shape(t1,t2));
 	Tensor<T> t(t1.shape);
-	*t.data = *t1.data - *t2.data;
+	if(!t1.is_external() && !t2.is_external()) *t.data = *t1.data - *t2.data;
+	else for(std::size_t i=0; i<t.shape.get_shape_all(); ++i) t.ptr()[i] = t1.ptr()[i] - t2.ptr()[i];
 	return t;
 }
 
@@ -141,7 +155,8 @@ template<typename T>
 Tensor<T> operator* (const T &t1, const Tensor<T> &t2)
 {
 	Tensor<T> t(t2.shape);
-	*t.data = t1 * *t2.data;
+	if(!t2.is_external()) *t.data = t1 * *t2.data;
+	else for(std::size_t i=0; i<t.shape.get_shape_all(); ++i) t.ptr()[i] = t1 * t2.ptr()[i];
 	return t;
 }
 
@@ -149,7 +164,8 @@ template<typename T>
 Tensor<T> operator* (const Tensor<T> &t1, const T &t2)
 {
 	Tensor<T> t(t1.shape);
-	*t.data = *t1.data * t2;
+	if(!t1.is_external()) *t.data = *t1.data * t2;
+	else for(std::size_t i=0; i<t.shape.get_shape_all(); ++i) t.ptr()[i] = t1.ptr()[i] * t2;
 	return t;
 }
 
@@ -157,7 +173,8 @@ template<typename T>
 Tensor<T> &Tensor<T>::operator+= (const Tensor &t)
 {
 	assert(same_shape(*this,t));
-	*this->data += *t.data;
+	if(!is_external() && !t.is_external()) *data += *t.data;
+	else for(std::size_t i=0; i<shape.get_shape_all(); ++i) ptr()[i] += t.ptr()[i];
 	return *this;
 }
 
@@ -165,7 +182,8 @@ template<typename T>
 Tensor<T> &Tensor<T>::operator-= (const Tensor &t)
 {
 	assert(same_shape(*this,t));
-	*this->data -= *t.data;
+	if(!is_external() && !t.is_external()) *data -= *t.data;
+	else for(std::size_t i=0; i<shape.get_shape_all(); ++i) ptr()[i] -= t.ptr()[i];
 	return *this;
 }
 
@@ -195,8 +213,8 @@ template<typename T>
 Tensor<T> Tensor<T>::conjugate() const
 {
 	Tensor<T> t(this->shape);
-	for (std::size_t i = 0; i < this->data->size(); ++i)
-        (*t.data)[i] = Global_Func::get_conj((*this->data)[i]);
+	for (std::size_t i = 0; i < this->shape.get_shape_all(); ++i)
+        (*t.data)[i] = Global_Func::get_conj(ptr()[i]);
 	return t;
 }
 
@@ -209,22 +227,22 @@ Global_Func::To_Real_t<T> Tensor<T>::norm(const double p) const
 	else if(p==1)
 	{
 		T_res s = 0;
-		for(std::size_t i=0; i<this->data->size(); ++i)
-			s += std::abs((*this->data)[i]);
+		for(std::size_t i=0; i<this->shape.get_shape_all(); ++i)
+			s += std::abs(ptr()[i]);
 		return s;
 	}
 	else if(p==std::numeric_limits<double>::max())
 	{
 		T_res s = 0;
-		for(std::size_t i=0; i<this->data->size(); ++i)
-			s = std::max(std::real(s), std::abs((*this->data)[i]));
+		for(std::size_t i=0; i<this->shape.get_shape_all(); ++i)
+			s = std::max(std::real(s), std::abs(ptr()[i]));
 		return s;
 	}
 	else
 	{
 		T_res s = 0;
-		for(std::size_t i=0; i<this->data->size(); ++i)
-			s += std::pow(std::abs((*this->data)[i]), p);
+		for(std::size_t i=0; i<this->shape.get_shape_all(); ++i)
+			s += std::pow(std::abs(ptr()[i]), p);
 		return std::pow(s,1.0/p);
 	}
 }
@@ -237,7 +255,7 @@ namespace Global_Func
 	{
 		Tensor<Tout> t_out(t_in.shape);
 		for(std::size_t i=0; i<t_out.data->size(); ++i)
-			(*t_out.data)[i] = Global_Func::convert<Tout>((*t_in.data)[i]);
+			(*t_out.data)[i] = Global_Func::convert<Tout>(t_in.ptr()[i]);
 		return t_out;
 	}
 }

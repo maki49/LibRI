@@ -144,6 +144,13 @@ auto Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>::comm_tensors_map2(
 	const std::map<TA,std::map<TAC,Tensor<Tdata>>> &Ds) const
 -> std::map<TA,std::map<TAC,Tensor<Tdata>>>
 {
+	return Communicate_Tensors_Map::comm_map2(this->mpi_comm, Ds, tensor_judge(label_list));
+}
+
+template<typename TA, typename Tcell, std::size_t Ndim, typename Tdata>
+auto Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>::tensor_judge(
+	const std::vector<Label::ab> &label_list) const -> Tensor_Judge
+{
 	std::tuple<
 		std::vector<std::tuple< std::set<TA>, std::set<std::pair<TA,TC>> >>,
 		std::vector<std::tuple< std::set<std::pair<TA,TC>>, std::set<std::pair<TA,TC>> >>
@@ -191,7 +198,7 @@ auto Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>::comm_tensors_map2(
 	if(flags[4])	std::get<1>(s_list).push_back(std::make_tuple( Global_Func::to_set(this->list_Aa2), Global_Func::to_set(this->list_Ab01) ));
 	if(flags[5])	std::get<1>(s_list).push_back(std::make_tuple( Global_Func::to_set(this->list_Aa2), Global_Func::to_set(this->list_Ab2) ));
 
-	return Communicate_Tensors_Map_Judge::comm_map2_combine_origin_period(this->mpi_comm, Ds, s_list, this->period);
+	return Communicate_Tensors_Map_Judge::make_combined_judge<TA,TC>(s_list, this->period);
 }
 
 }

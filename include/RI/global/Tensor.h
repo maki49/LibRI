@@ -23,10 +23,15 @@ class Tensor
 {
 public:
 	Shape_Vector shape;
+	// External views have data == nullptr; use ptr()/shape or copy() for owned storage.
 	std::shared_ptr<std::valarray<T>> data=nullptr;
 
 	explicit inline Tensor (const Shape_Vector &shape_in);
 	explicit inline Tensor (const Shape_Vector &shape_in, std::shared_ptr<std::valarray<T>> data_in);
+
+	// owner keeps externally allocated storage alive; shallow copies/reshape retain it.
+	explicit inline Tensor(const Shape_Vector &shape_in, T *ptr_in, std::shared_ptr<void> owner);
+	bool is_external() const { return bool(external_owner); }
 
 	Tensor()=default;
 	Tensor(const Tensor<T> &t_in)=default;
@@ -51,7 +56,7 @@ public:
 	// if(p==std::numeric_limits<double>::max())    ||d||_max = max_i |d_i|
 	Global_Func::To_Real_t<T> norm(const double p) const;
 
-	T* ptr()const{ return &(*this->data)[0]; }
+	T* ptr()const{ return external_owner ? external_ptr : (data ? &(*data)[0] : nullptr); }
 
 	bool empty() const { return shape.empty(); }
 
@@ -59,10 +64,27 @@ public:
 	Tensor & operator -= (const Tensor &t);
 	Tensor operator-() const;
 
-	template <class Archive> void serialize( Archive & ar ){ ar(shape, data); }		// for cereal
+	// Preserve the existing cereal wire format. A view serializes its values,
+	// never a process-local address, and deserialization always owns its storage.
+	template <class Archive> void serialize(Archive &ar)
+	{
+		auto values = data;
+		if(Archive::is_saving::value && is_external())
+			values = std::make_shared<std::valarray<T>>(ptr(), shape.get_shape_all());
+		ar(shape, values);
+		if(Archive::is_loading::value)
+		{
+			data = std::move(values);
+			external_owner.reset();
+			external_ptr = nullptr;
+		}
+	}
 
 	// Deprecated. Using shape.get_shape_all() instead
 	std::size_t get_shape_all() const { return this->shape.get_shape_all(); }
+private:
+	T *external_ptr = nullptr;
+	std::shared_ptr<void> external_owner;
 };
 
 

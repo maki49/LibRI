@@ -97,9 +97,16 @@ public:
 	// Owns device copies only for explicitly named geometry-fixed input packs.
 	std::shared_ptr<GPU_Data::Resident_Blocks<TA, TAC, Tdata>> gpu_resident_blocks;
 	std::set<std::string> gpu_resident_names;
+	std::set<std::string> gpu_shared_names;
 	// Detach shared resident values before replacing/freeing an input, without MPI collectives.
 	void invalidate_gpu_resident_data(const std::string &save_name);
   public:
+#define RI_GPU_SHARED_INPUTS_AVAILABLE 1
+	// Opt in before collective set_tensors_map2 calls. All ranks must use the
+	// same names/filtering parameters. Intended for geometry-fixed C/V inputs;
+	// flag_comm=false and one rank per node retain ordinary owned tensors.
+	// Shared views expose ptr()/shape; data is null. copy() materializes values.
+	void set_gpu_shared_data_names(const std::set<std::string> &names) { gpu_shared_names = names; }
 	void set_gpu_resident_data_names(const std::set<std::string> &names);
 	void cal_loop3_GPU(
 		const std::vector<Label::ab_ab> &labels,

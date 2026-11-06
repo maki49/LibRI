@@ -14,7 +14,8 @@ find_package(LAPACK REQUIRED)
 
 add_executable(test_lri_gpu_symmetry test_lri_gpu_symmetry.cpp)
 add_executable(test_gpu_resident test_gpu_resident.cpp)
-foreach(test_target test_lri_gpu_symmetry test_gpu_resident)
+add_executable(test_shared_tensor test_shared_tensor.cpp)
+foreach(test_target test_lri_gpu_symmetry test_gpu_resident test_shared_tensor)
 target_compile_features(${test_target} PRIVATE cxx_std_14)
 target_include_directories(${test_target} PRIVATE
   "${LIBRI_ROOT}/include" "${LIBCOMM_ROOT}/include" "${CEREAL_ROOT}/include")
@@ -52,5 +53,17 @@ foreach(backend cpu gpu)
       set_tests_properties(${test_name} PROPERTIES TIMEOUT 180 SKIP_RETURN_CODE 77
         ENVIRONMENT "OMP_NUM_THREADS=${threads};OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1")
     endforeach()
+  endforeach()
+endforeach()
+
+foreach(backend cpu gpu)
+  if(backend STREQUAL "gpu" AND NOT ENABLE_GPU)
+    continue()
+  endif()
+  foreach(ranks 1 2)
+    add_test(NAME shared_${backend}_${ranks}mpi COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${ranks}
+      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_shared_tensor> ${MPIEXEC_POSTFLAGS} ${backend})
+    set_tests_properties(shared_${backend}_${ranks}mpi PROPERTIES TIMEOUT 600 ENVIRONMENT
+      "OMP_NUM_THREADS=6;OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1")
   endforeach()
 endforeach()

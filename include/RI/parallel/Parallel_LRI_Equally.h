@@ -6,6 +6,8 @@
 #pragma once
 
 #include "Parallel_LRI.h"
+#include "../comm/mix/Communicate_Tensors_Map_Judge.h"
+#include "../global/Shared_Tensor_Map.h"
 
 namespace RI
 {
@@ -31,6 +33,27 @@ class Parallel_LRI_Equally: public Parallel_LRI<TA,Tcell,Ndim,Tdata>
 	virtual std::map<TA,std::map<TAC,Tensor<Tdata>>> comm_tensors_map2(
 		const std::vector<Label::ab> &label,
 		const std::map<TA,std::map<TAC,Tensor<Tdata>>> &Ds) const override;
+
+	using Tensor_Judge = Communicate_Tensors_Map_Judge::Combined_Judge<TA, TC>;
+	Tensor_Judge tensor_judge(const std::vector<Label::ab> &labels) const;
+
+	// Collective global exchange, receiving the exact union of local requests
+	// only on each node's root. The computation partition itself is unchanged.
+	std::map<TA,std::map<TAC,Tensor<Tdata>>> comm_tensors_map2_node(
+		const std::vector<Label::ab> &labels,
+		const std::map<TA,std::map<TAC,Tensor<Tdata>>> &values,
+		const Node_Shared::Communicator &node) const
+	{
+		const auto judge = Node_Shared::collect_on_root(node, tensor_judge(labels),
+			[](Tensor_Judge &all, const Tensor_Judge &part)
+			{
+				auto &a = std::get<0>(all.judge_list); const auto &b = std::get<0>(part.judge_list);
+				a.insert(a.end(), b.begin(), b.end());
+				auto &c = std::get<1>(all.judge_list); const auto &d = std::get<1>(part.judge_list);
+				c.insert(c.end(), d.begin(), d.end());
+			});
+		return Communicate_Tensors_Map::comm_map2(this->mpi_comm, values, judge);
+	}
 
 	const std::vector<TA >& get_list_Aa01() const override { return this->list_Aa01; }
 	const std::vector<TAC>& get_list_Aa2 (const TA &Aa01) const override { return this->list_Aa2;  }
