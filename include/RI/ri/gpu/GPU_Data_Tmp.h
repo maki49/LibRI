@@ -81,11 +81,18 @@ class Tmp
 		return segments;
 	}
 
-	~Tmp()
+	// Reclaim scratch storage after both GEMMs in the stage have completed.
+	void release()
 	{
-		GPU_Backend::free(this->d_data);
-		GPU_Backend::free(this->d_array);
+		GPU_Backend::free(d_data);
+		d_data = nullptr;
+		GPU_Backend::free(d_array);
+		d_array = nullptr;
+		decltype(h_array)().swap(h_array);
+		totalSize = 0;
 	}
+
+	~Tmp() { release(); }
 
 	std::size_t totalSize = 0;					// 总的数据数量
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）

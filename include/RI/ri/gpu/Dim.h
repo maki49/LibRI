@@ -32,10 +32,14 @@ class Dim
 			this->shapes.size(), this->shapes.data(), this->d_m, queue);
 	}
 
-	~Dim()
+	void release()
 	{
-		GPU_Backend::free(this->d_m);
+		GPU_Backend::free(d_m);
+		d_m = nullptr;
+		decltype(shapes)().swap(shapes);
 	}
+
+	~Dim() { release(); }
 
 	int* data() const
 	{
@@ -80,6 +84,13 @@ class Dim_mnk
 		m.input(shape_m);
 		n.input(shape_n);
 		k.input(std::get<0>(shape_k), std::get<1>(shape_k));
+	}
+
+	void release()
+	{
+		m.release();
+		n.release();
+		k.release();
 	}
 
 	void upload(GPU_Backend::Queue queue)

@@ -254,6 +254,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_mul.h_array_1.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a0b0.release();
+					rDs_a1b1.release();
+					rDs_tmp.release();
+					rDs_mul.release_first();
+					dim_0.release();
+					dim_1.release();
 
 					// D_result = D_mul * D_a
 					GPU_Data::Input<TA, TAC, Tdata> rDs_a;
@@ -330,6 +338,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						rDs_output.h_array.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_a.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b0_a1b1
@@ -418,6 +430,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_mul.h_array_1.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a0b1.release();
+					rDs_a1b0.release();
+					rDs_tmp.release();
+					rDs_mul.release_first();
+					dim_0.release();
+					dim_1.release();
 
 					// D_result = D_mul * D_a
 					GPU_Data::Input<TA, TAC, Tdata> rDs_a;
@@ -466,6 +486,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						rDs_output.h_array.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_a.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b1_a1b0
@@ -574,6 +598,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a1b2.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a * D_a0b0
 					GPU_Data::Input<TA, TAC, Tdata> rDs_a, rDs_a0b0;
@@ -672,6 +701,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_a.release();
+					rDs_a0b0.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b0_a1b2
@@ -747,6 +783,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a1b2.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a * D_a0b1
 					GPU_Data::Input<TA, TAC, Tdata> rDs_a, rDs_a0b1;
@@ -812,6 +853,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_a.release();
+					rDs_a0b1.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b1_a1b2
@@ -887,6 +935,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a0b2.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a * D_a1b0
 					GPU_Data::Input<TA, TAC, Tdata> rDs_a, rDs_a1b0;
@@ -952,6 +1005,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_a.release();
+					rDs_a1b0.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b2_a1b0
@@ -1027,6 +1087,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a0b2.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a * D_a1b1
 					GPU_Data::Input<TA, TAC, Tdata> rDs_a, rDs_a1b1;
@@ -1092,6 +1157,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_a.release();
+					rDs_a1b1.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b2_a1b1
@@ -1200,6 +1272,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b1.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a0b0 * D_b
 					GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_a0b0;
@@ -1298,6 +1375,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_b.release();
+					rDs_a0b0.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b0_a2b1
@@ -1373,6 +1457,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b0.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a0b1 * D_b
 					GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_a0b1;
@@ -1438,6 +1527,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_b.release();
+					rDs_a0b1.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b1_a2b0
@@ -1513,6 +1609,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b1.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a1b0 * D_b
 					GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_a1b0;
@@ -1578,6 +1679,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_b.release();
+					rDs_a1b0.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a1b0_a2b1
@@ -1653,6 +1761,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b0.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a1b1 * D_b
 					GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_a1b1;
@@ -1718,6 +1831,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_b.release();
+					rDs_a1b1.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a1b1_a2b0
@@ -1825,6 +1945,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b2.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a0b0 * D_b
 					GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_a0b0;
@@ -1924,6 +2049,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_b.release();
+					rDs_a0b0.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b0_a2b2
@@ -1998,6 +2130,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b2.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a0b1 * D_b
 					GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_a0b1;
@@ -2063,6 +2200,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_b.release();
+					rDs_a0b1.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b1_a2b2
@@ -2137,6 +2281,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b2.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a1b0 * D_b
 					GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_a1b0;
@@ -2202,6 +2351,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_b.release();
+					rDs_a1b0.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a1b0_a2b2
@@ -2276,6 +2432,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						rDs_mul.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b2.release();
+					rDs_mul.release_first();
+					dim_0.release();
 
 					// D_result = D_mul * D_a1b1 * D_b
 					GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_a1b1;
@@ -2341,6 +2502,13 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						C0_left,
 						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul.release();
+					rDs_tmp.release();
+					rDs_b.release();
+					rDs_a1b1.release();
+					dim_1.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a1b1_a2b2
@@ -2416,6 +2584,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_1.d_array_1,
 						rDs_mul_1.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a1b2.release();
+					rDs_mul_1.release_first();
+					dim_0.release();
 
 					// D_mul2 = D_a2b1 * D_a
 					// b1a1a0 = a2b1 * a1a0a2
@@ -2466,6 +2639,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_1,
 						rDs_mul_2.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b1.release();
+					rDs_mul_2.release_first();
+					dim_1.release();
 
 					// D_result = D_mul2 * D_mul1
 					// a0b0 = b1a1a0 * b0b1a1
@@ -2508,6 +2686,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						rDs_output.h_array.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul_1.release();
+					rDs_mul_2.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a1b2_a2b1
@@ -2581,6 +2763,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_1.d_array_1,
 						rDs_mul_1.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a0b2.release();
+					rDs_mul_1.release_first();
+					dim_0.release();
 
 					// D_mul2 = D_a2b0 * D_a
 					// a1a0b0 = a1a0a2 * a2b0
@@ -2631,6 +2818,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_1,
 						rDs_mul_2.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b0.release();
+					rDs_mul_2.release_first();
+					dim_1.release();
 
 					// D_result = D_mul2 * D_mul1
 					// a1b1 = a1a0b0 * a0b0b1
@@ -2673,6 +2865,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						rDs_output.h_array.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul_1.release();
+					rDs_mul_2.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b2_a2b0
@@ -2746,6 +2942,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_1.d_array_1,
 						rDs_mul_1.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a0b2.release();
+					rDs_mul_1.release_first();
+					dim_0.release();
 
 					// D_mul2 = D_a2b1 * D_a
 					// b1a0a1 = a2b1 * a0a1a2
@@ -2796,6 +2997,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_1,
 						rDs_mul_2.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b1.release();
+					rDs_mul_2.release_first();
+					dim_1.release();
 
 					// D_result = D_mul2 * D_mul1
 					// a1b0 = b1a0a1 * b0b1a0
@@ -2838,6 +3044,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						rDs_output.h_array.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul_1.release();
+					rDs_mul_2.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a0b2_a2b1
@@ -2911,6 +3121,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_1.d_array_1,
 						rDs_mul_1.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_b.release();
+					rDs_a1b2.release();
+					rDs_mul_1.release_first();
+					dim_0.release();
 
 					// D_mul2 = D_a2b0 * D_a
 					// a0a1b0 = a0a1a2 * a2b0
@@ -2961,6 +3176,11 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_1,
 						rDs_mul_2.h_array_1.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_a.release();
+					rDs_a2b0.release();
+					rDs_mul_2.release_first();
+					dim_1.release();
 
 					// D_result = D_mul2 * D_mul1
 					// a0b1 = a0a1b0 * a1b0b1
@@ -3003,6 +3223,10 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						rDs_output.h_array.size(), queue);
 					GPU_Backend::sync(queue);
+					// Release completed-stage storage before allocating the next stage.
+					rDs_mul_1.release();
+					rDs_mul_2.release();
+					dim_2.release();
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
 				} break; // end case a1b2_a2b0

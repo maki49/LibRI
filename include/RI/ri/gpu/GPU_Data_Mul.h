@@ -74,12 +74,28 @@ class Mul
 			batchCount, d_array_2_.data(), this->d_array_2, queue);
 	}
 
-	~Mul()
+	// Stage one is complete; retain its accumulated blocks for stage two.
+	void release_first()
 	{
-		GPU_Backend::free(this->d_data);
-		GPU_Backend::free(this->d_array_1);
-		GPU_Backend::free(this->d_array_2);
+		GPU_Backend::free(d_array_1);
+		d_array_1 = nullptr;
+		decltype(h_array_1)().swap(h_array_1);
 	}
+
+	// The queue must have finished consuming the intermediate blocks.
+	void release()
+	{
+		release_first();
+		GPU_Backend::free(d_data);
+		d_data = nullptr;
+		GPU_Backend::free(d_array_2);
+		d_array_2 = nullptr;
+		decltype(h_array_2)().swap(h_array_2);
+		ptrList.clear();
+		totalSize = 0;
+	}
+
+	~Mul() { release(); }
 
 	std::size_t totalSize = 0;                  // 总的数据数量
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）

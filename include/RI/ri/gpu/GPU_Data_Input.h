@@ -197,11 +197,23 @@ class Input
 		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
 	}
 
-	~Input()
+	// Call after the queue has finished consuming this stage's inputs.
+	// Resident values are borrowed; only this pack's owned storage is released.
+	void release()
 	{
 		GPU_Backend::free(this->d_data);
+		d_data = nullptr;
 		GPU_Backend::free(this->d_array);
+		d_array = nullptr;
+		decltype(h_data)().swap(h_data);
+		decltype(h_array)().swap(h_array);
+		decltype(planned_sizes)().swap(planned_sizes);
+		decltype(copy_tasks)().swap(copy_tasks);
+		decltype(tensor_insert)().swap(tensor_insert);
+		ptrList.clear();
 	}
+
+	~Input() { release(); }
 
   private:
 	struct Copy_Task
