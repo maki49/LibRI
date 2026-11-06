@@ -14,7 +14,12 @@ find_package(LAPACK REQUIRED)
 
 add_executable(test_lri_gpu_symmetry test_lri_gpu_symmetry.cpp)
 add_executable(test_gpu_resident test_gpu_resident.cpp)
-foreach(test_target test_lri_gpu_symmetry test_gpu_resident)
+set(test_targets test_lri_gpu_symmetry test_gpu_resident)
+if(ENABLE_GPU)
+  add_executable(test_gpu_output test_gpu_output.cpp)
+  list(APPEND test_targets test_gpu_output)
+endif()
+foreach(test_target ${test_targets})
 target_compile_features(${test_target} PRIVATE cxx_std_14)
 target_include_directories(${test_target} PRIVATE
   "${LIBRI_ROOT}/include" "${LIBCOMM_ROOT}/include" "${CEREAL_ROOT}/include")
@@ -34,6 +39,10 @@ endif()
 endforeach()
 
 enable_testing()
+if(ENABLE_GPU)
+  add_test(NAME gpu_output COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
+    ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_gpu_output> ${MPIEXEC_POSTFLAGS})
+endif()
 add_test(NAME lri_symmetry COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
   ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_lri_gpu_symmetry> ${MPIEXEC_POSTFLAGS})
 set_tests_properties(lri_symmetry PROPERTIES ENVIRONMENT

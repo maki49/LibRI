@@ -11,7 +11,9 @@
 #include "GPU_Data_Pack.h"
 #include "../LRI_Cal_Aux.h"
 
+#include <algorithm>
 #include <cstring>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -63,21 +65,67 @@ class Output
 		GPU_Backend::Queue queue,
 		const Tdata_CPU fac) const
 	{
-		std::vector<Tdata_GPU> h_data(this->totalSize);
-		GPU_Backend::download(
-			this->totalSize, this->d_data, h_data.data(), queue);
-		GPU_Backend::sync(queue);
-		for(const auto &ptrList_A : this->ptrList)
-		{
-			for(const auto &ptrList_B : ptrList_A.second)
-			{
-				const Pack &pack = ptrList_B.second;
-				Tensor<Tdata_CPU> D_output(pack.shape);
-				download_data_impl(D_output, h_data, pack, Same_data_layout());
+		download(Ds_result, queue, fac, std::size_t(64) * 1024 * 1024);
+	}
 
-				Tensor<Tdata_CPU> &D_result = Ds_result[ptrList_A.first][ptrList_B.first];
-				LRI_Cal_Aux::add_Ds(std::move(D_output), D_result, fac);
+	// Download contiguous groups of complete output blocks. The staging buffer
+	// is bounded by buffer_bytes, or by the largest block when that is larger.
+	void download(
+		std::map<TA, std::map<TAC, Tensor<Tdata_CPU>>> &Ds_result,
+		GPU_Backend::Queue queue,
+		const Tdata_CPU fac,
+		const std::size_t buffer_bytes) const
+	{
+		if(buffer_bytes == 0)
+			throw std::invalid_argument("GPU output download buffer must be positive");
+		if(totalSize == 0)
+			return;
+
+		struct Block
+		{
+			const TA *a;
+			const TAC *b;
+			const Pack *pack;
+		};
+		std::vector<Block> blocks;
+		std::size_t capacity = std::max(std::size_t(1), buffer_bytes / sizeof(Tdata_GPU));
+		for(const auto &row : ptrList)
+			for(const auto &entry : row.second)
+			{
+				blocks.push_back({&row.first, &entry.first, &entry.second});
+				capacity = std::max(capacity, entry.second.shape.get_shape_all());
 			}
+		// Registration order need not match map order, particularly with OpenMP.
+		std::sort(blocks.begin(), blocks.end(), [](const Block &a, const Block &b)
+		{
+			return a.pack->pos < b.pack->pos;
+		});
+		std::vector<Tdata_GPU> h_data(std::min(totalSize, capacity));
+		for(std::size_t begin = 0; begin < blocks.size(); )
+		{
+			const std::size_t offset = blocks[begin].pack->pos;
+			std::size_t end = begin;
+			std::size_t count = 0;
+			while(end < blocks.size())
+			{
+				const Pack &pack = *blocks[end].pack;
+				const std::size_t next_count = pack.pos + pack.shape.get_shape_all() - offset;
+				if(next_count > h_data.size()) break;
+				count = next_count;
+				++end;
+			}
+			GPU_Backend::download(count, d_data + offset, h_data.data(), queue);
+			GPU_Backend::sync(queue);
+			for(std::size_t i = begin; i < end; ++i)
+			{
+				const Block &block = blocks[i];
+				const Pack &pack = *block.pack;
+				Tensor<Tdata_CPU> D_output(pack.shape);
+				const Tdata_GPU *source = h_data.data() + pack.pos - offset;
+				download_data_impl(D_output, source, Same_data_layout());
+				LRI_Cal_Aux::add_Ds(std::move(D_output), Ds_result[*block.a][*block.b], fac);
+			}
+			begin = end;
 		}
 	}
 
@@ -90,24 +138,22 @@ class Output
   private:
 	static void download_data_impl(
 		Tensor<Tdata_CPU> &D_output,
-		const std::vector<Tdata_GPU> &h_data,
-		const Pack &pack,
+		const Tdata_GPU *source,
 		std::true_type)
 	{
 		std::memcpy(
 			D_output.ptr(),
-			h_data.data()+pack.pos,
-			pack.shape.get_shape_all()*sizeof(Tdata_CPU));
+			source,
+			D_output.shape.get_shape_all()*sizeof(Tdata_CPU));
 	}
 
 	static void download_data_impl(
 		Tensor<Tdata_CPU> &D_output,
-		const std::vector<Tdata_GPU> &h_data,
-		const Pack &pack,
+		const Tdata_GPU *source,
 		std::false_type)
 	{
-		const std::size_t size = pack.shape.get_shape_all();
-		const auto ptr_src = h_data.begin()+pack.pos;
+		const std::size_t size = D_output.shape.get_shape_all();
+		const auto ptr_src = source;
 		const auto ptr_dest = D_output.ptr();
 		for(std::size_t i=0; i<size; ++i)
 			ptr_dest[i] = GPU_Backend::data_to_CPU(ptr_src[i]);
