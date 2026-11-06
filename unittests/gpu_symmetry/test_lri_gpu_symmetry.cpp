@@ -8,6 +8,10 @@ template <typename T>
 void check(const std::string& scalar, T imaginary, int selected, const std::string& backend)
 {
     RI::LRI<int, int, 1, T> lri;
+#ifdef __GPU_RI
+    // Force multiple batches while checking all output-sector filters.
+    lri.gpu_atom_batch_size = 1;
+#endif
     const std::vector<Label> all_labels(RI::Label::array_ab_ab.begin(), RI::Label::array_ab_ab.end());
     const std::map<int, std::array<double, 1>> atoms{{0, {0.0}}, {1, {0.4}}};
     const std::array<std::array<double, 1>, 1> lattice{{{{1.0}}}};

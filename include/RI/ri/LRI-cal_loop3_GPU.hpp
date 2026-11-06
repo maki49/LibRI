@@ -22,6 +22,7 @@
 #include "gpu/GPU_Data_Output.h"
 #include "gpu/Dim.h"
 
+#include <algorithm>
 #include <omp.h>
 #include <typeinfo>
 
@@ -123,9 +124,39 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 	const Resident_Map *resident_b_transpose = Ds_b_transpose.empty()
 		? nullptr : resident_for(Label::ab::b, b_transpose_variant, Ds_b_transpose);
 
+	// Aa01 identifies independent first-stage intermediates in every label.
+	// Complete both stages for a tile before moving on. Labels that sum Aa01
+	// into the same output block accumulate their partial results on the host.
+	struct Atom_Batch
+	{
+		Label::ab_ab label;
+		std::vector<TA> atoms;
+		bool cacheable;
+	};
+	std::vector<Atom_Batch> atom_batches;
 	for(const Label::ab_ab &label : labels)
 	{
-		const std::vector<TA>  list_Aa01_Da = LRI_Cal_Aux::filter_list_map( this->parallel->list_A[Label_Tools::to_Aab_Aab(label)].a01, data_wrapper(Label::ab::a).Ds_ab );
+		const auto &assigned = this->parallel->list_A.at(Label_Tools::to_Aab_Aab(label)).a01;
+		const auto atoms = LRI_Cal_Aux::filter_list_map(assigned, data_wrapper(Label::ab::a).Ds_ab);
+		const std::size_t batch_size = gpu_atom_batch_size == 0 ? atoms.size() : gpu_atom_batch_size;
+		const bool multiple_batches = atoms.size() > batch_size;
+		// Cached layouts for all tiles would retain the full host-side task graph.
+		// Keep the existing cache only when the whole label fits in one batch.
+		if(this->gpu_lr_plan_cache && multiple_batches)
+			this->gpu_lr_plan_cache->cases.erase(label);
+		for(std::size_t begin = 0; begin < atoms.size(); )
+		{
+			const std::size_t end = begin + std::min(batch_size, atoms.size() - begin);
+			atom_batches.push_back({label, std::vector<TA>(atoms.begin() + begin, atoms.begin() + end),
+			                        cacheable && !multiple_batches});
+			begin = end;
+		}
+	}
+
+	for(const Atom_Batch &batch : atom_batches)
+	{
+		const Label::ab_ab label = batch.label;
+		const std::vector<TA> &list_Aa01_Da = batch.atoms;
 		const std::vector<TAC> list_Ab01_Db = LRI_Cal_Aux::filter_list_map( this->parallel->list_A[Label_Tools::to_Aab_Aab(label)].b01, data_wrapper(Label::ab::b).Ds_ab );
 		const std::vector<TAC> list_Aa2_Da  = LRI_Cal_Aux::filter_list_set( this->parallel->list_A[Label_Tools::to_Aab_Aab(label)].a2,  data_wrapper(Label::ab::a).index_Ds_ab[0] );
 		const std::vector<TAC> list_Ab2_Db  = LRI_Cal_Aux::filter_list_set( this->parallel->list_A[Label_Tools::to_Aab_Aab(label)].b2,  data_wrapper(Label::ab::b).index_Ds_ab[0] );
@@ -136,7 +167,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 
 				case Label::ab_ab::a0b0_a1b1:
 				{
-					Case_Plan *case_plan = cacheable ? &this->gpu_lr_plan_cache->cases[label] : nullptr;
+					Case_Plan *case_plan = batch.cacheable ? &this->gpu_lr_plan_cache->cases[label] : nullptr;
 					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map( LRI_Cal_Aux::filter_list_map(
 						list_Aa01_Da,
 						data_wrapper(Label::ab::a0b0).Ds_ab ),
@@ -498,7 +529,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 
 				case Label::ab_ab::a0b0_a1b2:
 				{
-					Case_Plan *case_plan = cacheable ? &this->gpu_lr_plan_cache->cases[label] : nullptr;
+					Case_Plan *case_plan = batch.cacheable ? &this->gpu_lr_plan_cache->cases[label] : nullptr;
 					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map( LRI_Cal_Aux::filter_list_map(
 						list_Aa01_Da,
 						data_wrapper(Label::ab::a0b0).Ds_ab ),
@@ -1172,7 +1203,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 
 				case Label::ab_ab::a0b0_a2b1:
 				{
-					Case_Plan *case_plan = cacheable ? &this->gpu_lr_plan_cache->cases[label] : nullptr;
+					Case_Plan *case_plan = batch.cacheable ? &this->gpu_lr_plan_cache->cases[label] : nullptr;
 					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map(
 						list_Aa01_Da,
 						data_wrapper(Label::ab::a0b0).Ds_ab );
@@ -1846,7 +1877,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 
 				case Label::ab_ab::a0b0_a2b2:
 				{
-					Case_Plan *case_plan = cacheable ? &this->gpu_lr_plan_cache->cases[label] : nullptr;
+					Case_Plan *case_plan = batch.cacheable ? &this->gpu_lr_plan_cache->cases[label] : nullptr;
 					const std::vector<TA >  list_Aa01 = LRI_Cal_Aux::filter_list_map(
 						list_Aa01_Da,
 						data_wrapper(Label::ab::a0b0).Ds_ab );
@@ -3234,7 +3265,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 			default:
 				throw std::invalid_argument(std::string(__FILE__)+std::to_string(__LINE__));
 		} // end switch(label)
-	} // end for label
+	} // end for atom batch
 
 	LRI_Cal_Aux::destroy_Ds_result(Ds_result);
 	#ifdef __MKL_RI

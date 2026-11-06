@@ -100,6 +100,9 @@ public:
 	// Detach shared resident values before replacing/freeing an input, without MPI collectives.
 	void invalidate_gpu_resident_data(const std::string &save_name);
   public:
+	// Maximum Aa01 atoms per complete GPU contraction batch; zero uses all atoms.
+	// Multi-batch calls rebuild layouts to avoid retaining the full task graph.
+	std::size_t gpu_atom_batch_size = 8;
 	void set_gpu_resident_data_names(const std::set<std::string> &names);
 	void cal_loop3_GPU(
 		const std::vector<Label::ab_ab> &labels,

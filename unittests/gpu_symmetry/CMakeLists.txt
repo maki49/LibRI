@@ -17,7 +17,8 @@ add_executable(test_gpu_resident test_gpu_resident.cpp)
 set(test_targets test_lri_gpu_symmetry test_gpu_resident)
 if(ENABLE_GPU)
   add_executable(test_gpu_output test_gpu_output.cpp)
-  list(APPEND test_targets test_gpu_output)
+  add_executable(test_gpu_tiling test_gpu_tiling.cpp)
+  list(APPEND test_targets test_gpu_output test_gpu_tiling)
 endif()
 foreach(test_target ${test_targets})
 target_compile_features(${test_target} PRIVATE cxx_std_14)
@@ -42,6 +43,10 @@ enable_testing()
 if(ENABLE_GPU)
   add_test(NAME gpu_output COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_gpu_output> ${MPIEXEC_POSTFLAGS})
+  add_test(NAME gpu_tiling COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
+    ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_gpu_tiling> ${MPIEXEC_POSTFLAGS})
+  set_tests_properties(gpu_output gpu_tiling PROPERTIES TIMEOUT 300 ENVIRONMENT
+    "OMP_NUM_THREADS=6;OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1")
 endif()
 add_test(NAME lri_symmetry COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
   ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_lri_gpu_symmetry> ${MPIEXEC_POSTFLAGS})
