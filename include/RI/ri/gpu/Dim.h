@@ -7,8 +7,10 @@
 
 #ifdef __GPU_RI
 
-#include "../../global/gpu/GPU_Backend.h"
 #include <vector>
+
+#include "../../global/gpu/GPU_Backend.h"
+#include "GPU_Data_Pack.h"
 
 namespace RI
 {
@@ -29,9 +31,12 @@ class Dim
 	void upload(GPU_Backend::Queue queue)
 	{
 		this->queue_ = queue;
+        this->host_shapes.reserve(this->shapes.size());
+        this->shapes.for_each([&](int shape) { this->host_shapes.push_back(shape); });
 		GPU_Backend::allocate(&this->d_m, this->shapes.size() + 1, queue);
 		GPU_Backend::upload(
-			this->shapes.size(), this->shapes.data(), this->d_m, queue);
+			this->host_shapes.size(), this->host_shapes.data(), this->d_m, queue);
+        this->shapes.release();
 	}
 
 	~Dim()
@@ -44,7 +49,10 @@ class Dim
 		return this->d_m;
 	}
 
-	std::vector<int> shapes;
+    GPU_Data::Thread_Batch<int> shapes;
+    // Keep the source alive until the queue has consumed the asynchronous copy.
+    GPU_Data::HostMemoryResource shape_storage{GPU_Data::HOST_BUFFER_MAPPING_THRESHOLD};
+    std::pmr::vector<int> host_shapes{&shape_storage};
 	int* d_m = nullptr;
 };
 
@@ -92,6 +100,6 @@ class Dim_mnk
 	}
 };
 
-}
+}  // namespace RI
 
 #endif

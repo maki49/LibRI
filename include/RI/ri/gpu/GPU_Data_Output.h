@@ -7,13 +7,13 @@
 
 #ifdef __GPU_RI
 
-#include "../../global/gpu/GPU_Backend.h"
-#include "GPU_Data_Pack.h"
-#include "../LRI_Cal_Aux.h"
-
 #include <cstring>
 #include <type_traits>
 #include <utility>
+
+#include "../../global/gpu/GPU_Backend.h"
+#include "../LRI_Cal_Aux.h"
+#include "GPU_Data_Pack.h"
 
 namespace RI
 {
@@ -22,7 +22,7 @@ namespace GPU_Data
 {
 
 template<typename TA, typename TAC, typename Tdata_CPU>
-class Output
+class Output : public Pair_Packs<TA, TAC>
 {
   public:
 	GPU_Backend::Queue queue_ = nullptr;
@@ -33,31 +33,33 @@ class Output
 
 	const Pack &insert(const TA &Aa, const TAC &Ab, const Shape_Vector &shape)
 	{
-		Pack &pack = this->ptrList[Aa][Ab];
+		Pack &pack = this->local_packs()[Aa][Ab];
 		if(!pack.exist)
 		{
 			pack.exist = true;
-			pack.pos = this->totalSize;
 			pack.shape = shape;
-			this->totalSize += shape.get_shape_all();
 		}
-		this->h_array.push_back(pack);
+		this->h_array.push_back(&pack);
 		return pack;
 	}
 
 	void upload(GPU_Backend::Queue queue)
 	{
 		this->queue_ = queue;
+		this->merge_packs();
 		GPU_Backend::allocate(&this->d_data, this->totalSize, queue);
 		GPU_Backend::memset(
-			this->d_data, 0, totalSize * sizeof(Tdata_GPU), queue);
+			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
 		const std::size_t batchCount = this->h_array.size();
-		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
-		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_[i] = this->d_data + this->h_array[i].pos;
+		this->host_pointers.resize(batchCount);
+		std::size_t i = 0;
+		this->h_array.for_each(
+			[&](const Pack *pack) { this->host_pointers[i++] = this->d_data + pack->pos; });
 		GPU_Backend::allocate(&this->d_array, batchCount, queue);
-		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
+		GPU_Backend::upload(batchCount, this->host_pointers.data(), this->d_array, queue);
+		this->h_array.release();
+		this->release_local_packs();
 	}
 
 	void download(
@@ -116,15 +118,15 @@ class Output
 	}
 
   public:
-	std::size_t totalSize = 0;                  // 总的数据数量
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
-	std::vector<Pack> h_array;					// 记录每个batch的Pack
+	Thread_Batch<const Pack *> h_array;
+	HostMemoryResource pointer_storage{HOST_BUFFER_MAPPING_THRESHOLD};
+	std::pmr::vector<Tdata_GPU *> host_pointers{&pointer_storage};
 	Tdata_GPU **d_array = nullptr;					// 记录每个batch的 d_data 指针（GPU）
-	std::map<TA, std::map<TAC, Pack>> ptrList;	// 记录每个原子对的Pack
 };
 
-}
+}  // namespace GPU_Data
 
-}
+}  // namespace RI
 
 #endif
