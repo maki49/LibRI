@@ -10,6 +10,9 @@
 #include <omp.h>
 
 #include <memory_resource>
+#include <memory>
+#include <limits>
+#include <stdexcept>
 #include <new>
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/mman.h>
@@ -79,6 +82,50 @@ class HostMemoryResource : public std::pmr::memory_resource
 
 public:
 	explicit HostMemoryResource(std::size_t minimum = 0) : minimum_mapping_size(minimum) {}
+};
+
+// Own host input objects without value-initializing arithmetic types. The
+// caller must overwrite every element before reading or uploading the buffer.
+// Class types still run their default constructors (including std::complex).
+template <typename T>
+class Default_Initialized_Buffer
+{
+	std::pmr::memory_resource *resource_;
+	std::size_t size_;
+	T *data_ = nullptr;
+
+public:
+	Default_Initialized_Buffer(std::pmr::memory_resource *resource, std::size_t count)
+		: resource_(resource), size_(count)
+	{
+		if (count == 0) return;
+		if (count > std::numeric_limits<std::size_t>::max() / sizeof(T))
+			throw std::length_error("LibRI host input buffer size overflow");
+		data_ = static_cast<T*>(resource_->allocate(count * sizeof(T), alignof(T)));
+		try
+		{
+			std::uninitialized_default_construct_n(data_, count);
+		}
+		catch (...)
+		{
+			// The algorithm destroys successfully constructed objects on failure.
+			resource_->deallocate(data_, count * sizeof(T), alignof(T));
+			throw;
+		}
+	}
+
+	Default_Initialized_Buffer(const Default_Initialized_Buffer&) = delete;
+	Default_Initialized_Buffer& operator=(const Default_Initialized_Buffer&) = delete;
+
+	~Default_Initialized_Buffer()
+	{
+		if (!data_) return;
+		std::destroy_n(data_, size_);
+		resource_->deallocate(data_, size_ * sizeof(T), alignof(T));
+	}
+
+	T* data() { return data_; }
+	std::size_t size() const { return size_; }
 };
 
 struct Pack

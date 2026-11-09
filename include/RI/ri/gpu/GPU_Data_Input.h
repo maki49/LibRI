@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <type_traits>
+#include <optional>
 
 #include "../../global/gpu/GPU_Backend.h"
 #include "GPU_Data_Pack.h"
@@ -62,13 +63,14 @@ class Input : public Pair_Packs<TA, TAC, Input_Pack<Tdata_CPU>>
 		this->merge_packs([&](const Entry& local, const Pack& shared) {
 			copies.push_back({local.tensor, shared.pos});
 		});
-		h_data.emplace_back(&data_storage);
-		h_data[0].resize(this->totalSize);
+		// merge_packs assigns disjoint intervals covering the entire input buffer.
+		// The parallel copies overwrite them all, so arithmetic inputs need no zero pass.
+		h_data.emplace(&data_storage, this->totalSize);
 #pragma omp parallel for schedule(static)
 		for(std::size_t i=0; i<copies.size(); ++i)
-			copy_data(h_data[0].data() + copies[i].offset, *copies[i].tensor, Same_data_layout());
+			copy_data(h_data->data() + copies[i].offset, *copies[i].tensor, Same_data_layout());
 		GPU_Backend::allocate(&d_data, this->totalSize, queue);
-		GPU_Backend::upload(this->totalSize, h_data[0].data(), d_data, queue);
+		GPU_Backend::upload(this->totalSize, h_data->data(), d_data, queue);
 
 		host_pointers.reserve(h_array.size());
 		h_array.for_each([&](const Entry* pack) { host_pointers.push_back(d_data + pack->pos); });
@@ -104,7 +106,8 @@ class Input : public Pair_Packs<TA, TAC, Input_Pack<Tdata_CPU>>
 
   public:
 	HostMemoryResource data_storage{HOST_BUFFER_MAPPING_THRESHOLD};
-	std::vector<std::pmr::vector<Tdata_GPU>> h_data;
+	// Keep host values alive until the queued upload has consumed them.
+	std::optional<Default_Initialized_Buffer<Tdata_GPU>> h_data;
 	Tdata_GPU *d_data = nullptr;
 	Tdata_GPU **d_array = nullptr;
 	Thread_Batch<const Entry*> h_array;
