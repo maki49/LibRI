@@ -112,8 +112,9 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 		#pragma omp parallel for schedule(static)
 		for(int tid=0; tid<static_cast<int>(this->h_data.size()); ++tid)
 		{
-			auto &buffer = this->h_data[tid];
-			buffer.resize(this->planned_sizes[tid]);
+			// Every unique input interval is overwritten before upload; no value-zero pass.
+            this->h_data[tid].reset(new Default_Initialized_Buffer<Tdata_GPU>(&host_storage,this->planned_sizes[tid]));
+            auto &buffer = *this->h_data[tid];
 			for(const Copy_Task &task : this->copy_tasks[tid])
 				copy_data_impl(buffer.data() + task.pos, *task.tensor, Same_data_layout());
 		}
@@ -156,12 +157,12 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 		}
 		std::vector<std::size_t> h_data_begin(this->h_data.size()+1, 0);
 		for(std::size_t i=1; i<h_data_begin.size(); ++i)
-			h_data_begin[i] = h_data_begin[i-1] + this->h_data[i-1].size();
+			h_data_begin[i] = h_data_begin[i-1] + this->h_data[i-1]->size();
 
 		GPU_Backend::allocate(&this->d_data, h_data_begin.back(), queue);
 		for(std::size_t i=0; i<this->h_data.size(); ++i)
 			GPU_Backend::upload(
-				this->h_data[i].size(), this->h_data[i].data(),
+				this->h_data[i]->size(), this->h_data[i]->data(),
 				this->d_data+h_data_begin[i], queue);
 
 		const std::size_t batchCount = this->h_array.size();
@@ -182,8 +183,7 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
     void initialize_host_slots(std::size_t count)
     {
         if(h_data.size()==count) return;
-        h_data.clear(); h_data.reserve(count);
-        for(std::size_t i=0;i<count;++i) h_data.emplace_back(&host_storage);
+        h_data.clear(); h_data.resize(count);
     }
 	struct Copy_Task
 	{
@@ -210,7 +210,7 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 
   public:
 	HostMemoryResource host_storage{HOST_BUFFER_MAPPING_THRESHOLD};
-	std::vector<std::pmr::vector<Tdata_GPU>> h_data;
+	std::vector<std::unique_ptr<Default_Initialized_Buffer<Tdata_GPU>>> h_data;
     std::pmr::vector<Tdata_GPU*> host_pointers{&host_storage}; // Host-side table of device addresses.
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
 	Tdata_GPU **d_array = nullptr;					// 记录每个batch的 d_data 指针（GPU）

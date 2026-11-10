@@ -73,3 +73,12 @@ if(ENABLE_GPU)
       ENVIRONMENT "OMP_NUM_THREADS=${threads};OMP_PROC_BIND=false;MKL_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
   endforeach()
 endif()
+
+# No GPU device is needed to validate default construction and resource ownership.
+add_executable(test_host_input_buffer test_host_input_buffer.cpp)
+target_compile_features(test_host_input_buffer PRIVATE cxx_std_17)
+target_compile_definitions(test_host_input_buffer PRIVATE __GPU_RI)
+target_include_directories(test_host_input_buffer PRIVATE "${LIBRI_ROOT}/include" "${CEREAL_ROOT}/include")
+target_link_libraries(test_host_input_buffer PRIVATE OpenMP::OpenMP_CXX)
+add_test(NAME host_input_buffer COMMAND test_host_input_buffer)
+set_tests_properties(host_input_buffer PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=6")
