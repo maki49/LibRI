@@ -6,6 +6,7 @@
 #pragma once
 #include <omp.h>
 #include <map>
+#include <memory_resource>
 #include <vector>
 #include "../../global/Shape_Vector.h"
 
@@ -42,7 +43,13 @@ public:
 template<typename TA, typename TAC, typename Record=Pack>
 class Pair_Packs
 {
-    struct alignas(64) Shard { std::map<TA,std::map<TAC,Record>> values; };
+    // Each worker owns an arena; map nodes are destroyed before bulk release.
+    using Local_Map=std::pmr::map<TA,std::pmr::map<TAC,Record>>;
+    struct alignas(64) Shard
+    {
+        std::pmr::monotonic_buffer_resource storage;
+        Local_Map values{&storage};
+    };
     std::vector<Shard> shards{static_cast<std::size_t>(omp_get_max_threads())};
 protected:
     auto& local_packs() { return shards[omp_get_thread_num()].values; }
@@ -62,7 +69,7 @@ protected:
         }
     }
     void merge_packs() { merge_packs([](const Record&,Pack&){}); }
-    void release_local_packs() { for(auto &shard:shards) shard.values.clear(); }
+    void release_local_packs() { for(auto &shard:shards) { shard.values.clear(); shard.storage.release(); } }
 public:
     std::size_t totalSize=0;
     std::map<TA,std::map<TAC,Pack>> ptrList;
