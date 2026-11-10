@@ -56,18 +56,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 			              this->parallel->list_A, this->data_pool);
 	}
 
-	struct Gpu_LR_Batch
-	{
-		const TA *Aa01 = nullptr;
-		const TAC *Aa2 = nullptr;
-		const TAC *Ab01 = nullptr;
-		const TAC *Ab2 = nullptr;
-		const Tensor<Tdata> *D_a = nullptr;
-		const Tensor<Tdata> *D_b = nullptr;
-		const Tensor<Tdata> *D_a0b0 = nullptr;
-		const Tensor<Tdata> *D_response = nullptr;
-		const GPU_Data::Pack *D_mul = nullptr;
-	};
+
 	constexpr std::size_t memory_limit = std::size_t(5)*1024*1024*1024;
 
 	const Data_Pack_Wrapper<TA,TC,Tdata> data_wrapper(this->data_pool, this->data_ab_name);
@@ -165,7 +154,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					// D_mul = D_b * D_a0b0 * D_a1b1
 					if(!case_plan || !case_plan->first.ready)
 					{
-					std::vector<std::vector<Gpu_LR_Batch>> lri_batches_1(omp_get_max_threads());
 					#pragma omp parallel
 					{
 						for(std::size_t ia01=0; ia01<list_Aa01.size(); ++ia01) // A
@@ -188,36 +176,17 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
 									if(D_b.empty())	continue;
 
-									Gpu_LR_Batch batch;
-									batch.Aa01 = &Aa01;
-									batch.Ab01 = &Ab01;
-									batch.Ab2 = &Ab2;
-									batch.D_b = &D_b;
-									batch.D_a0b0 = &D_a0b0;
-									batch.D_response = &D_a1b1;
-									lri_batches_1[omp_get_thread_num()].push_back(batch);
+									rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
+									rDs_a0b0.insert(Aa01, Ab01, D_a0b0);
+									rDs_a1b1.insert(Aa01, Ab01, D_a1b1);
+									const GPU_Data::Pack &D_tmp = rDs_tmp.insert({D_b.shape[1], D_b.shape[2], D_a0b0.shape[0]});
+									const GPU_Data::Pack &D_mul = rDs_mul.insert_1st(Aa01, Ab2, {D_tmp.shape[1], D_tmp.shape[2], D_a1b1.shape[0]});
+									dim_0.input({D_b.shape[1], D_b.shape[2]}, D_a0b0.shape[0], D_b.shape[0]);
+									dim_1.input({D_tmp.shape[1], D_tmp.shape[2]}, D_a1b1.shape[0], D_a1b1.shape[1]);
 								} // end for Aa01
 							} // end for Ab2
 						} // end for Ab01
 					} // end omp parallel
-					// Register the collected GEMM batches in one order; workers no longer contend on shared maps.
-					for(const auto &thread_batches : lri_batches_1)
-						for(const Gpu_LR_Batch &batch : thread_batches)
-						{
-							const TA &Aa01 = *batch.Aa01;
-							const TAC &Ab01 = *batch.Ab01;
-							const TAC &Ab2 = *batch.Ab2;
-							const Tensor<Tdata> &D_b = *batch.D_b;
-							const Tensor<Tdata> &D_a0b0 = *batch.D_a0b0;
-							const Tensor<Tdata> &D_a1b1 = *batch.D_response;
-							rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
-							rDs_a0b0.insert(Aa01, Ab01, D_a0b0);
-							rDs_a1b1.insert(Aa01, Ab01, D_a1b1);
-							const GPU_Data::Pack &D_tmp = rDs_tmp.insert({D_b.shape[1], D_b.shape[2], D_a0b0.shape[0]});
-							const GPU_Data::Pack &D_mul = rDs_mul.insert_1st(Aa01, Ab2, {D_tmp.shape[1], D_tmp.shape[2], D_a1b1.shape[0]});
-							dim_0.input({D_b.shape[1], D_b.shape[2]}, D_a0b0.shape[0], D_b.shape[0]);
-							dim_1.input({D_tmp.shape[1], D_tmp.shape[2]}, D_a1b1.shape[0], D_a1b1.shape[1]);
-						}
 						if(case_plan) case_plan->save_first({&rDs_b,&rDs_a0b0,&rDs_a1b1}, rDs_mul, &rDs_tmp, dim_0, &dim_1);
 					}
 					else
@@ -261,7 +230,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.bind_resident_blocks(resident_a);
 					if(!case_plan || !case_plan->second.ready)
 					{
-					std::vector<std::vector<Gpu_LR_Batch>> lri_batches_2(omp_get_max_threads());
 					#pragma omp parallel
 					{
 						for(std::size_t ia01=0; ia01<list_Aa01.size(); ++ia01) // A
@@ -282,31 +250,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
 									if (!D_mul.exist)	continue;
 
-									Gpu_LR_Batch batch;
-									batch.Aa01 = &Aa01;
-									batch.Aa2 = &Aa2;
-									batch.Ab2 = &Ab2;
-									batch.D_a = &D_a;
-									batch.D_mul = &D_mul;
-									lri_batches_2[omp_get_thread_num()].push_back(batch);
+									rDs_mul.insert_2nd(D_mul);
+									rDs_a.insert(Aa01, Aa2, D_a);
+									rDs_output.insert( Aa2.first, {Ab2.first, (Ab2.second - Aa2.second) % period}, {D_a.shape[2], D_mul.shape[0]});
+									dim_2.input(D_a.shape[2], D_mul.shape[0], {D_a.shape[0], D_a.shape[1]});
 								} // end for Ab2
 							} // end for Aa2
 						} // end for Aa01
 					} // end omp parallel
-					// Register the collected GEMM batches in one order; workers no longer contend on shared maps.
-					for(const auto &thread_batches : lri_batches_2)
-						for(const Gpu_LR_Batch &batch : thread_batches)
-						{
-							const TA &Aa01 = *batch.Aa01;
-							const TAC &Aa2 = *batch.Aa2;
-							const TAC &Ab2 = *batch.Ab2;
-							const Tensor<Tdata> &D_a = *batch.D_a;
-							const GPU_Data::Pack &D_mul = *batch.D_mul;
-							rDs_mul.insert_2nd(D_mul);
-							rDs_a.insert(Aa01, Aa2, D_a);
-							rDs_output.insert( Aa2.first, {Ab2.first, (Ab2.second - Aa2.second) % period}, {D_a.shape[2], D_mul.shape[0]});
-							dim_2.input(D_a.shape[2], D_mul.shape[0], {D_a.shape[0], D_a.shape[1]});
-						}
 						if(case_plan) case_plan->save_second({&rDs_a}, rDs_mul, nullptr, rDs_output, dim_2, nullptr);
 					}
 					else
@@ -379,7 +330,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
 									if(D_b.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a0b1.insert(Aa01, Ab01, D_a0b1);
@@ -441,7 +391,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
 									if (!D_mul.exist)	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_mul.insert_2nd(D_mul);
 										rDs_a.insert(Aa01, Aa2, D_a);
@@ -502,7 +451,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					// D_mul = D_b * D_a1b2
 					if(!case_plan || !case_plan->first.ready)
 					{
-					std::vector<std::vector<Gpu_LR_Batch>> lri_batches_3(omp_get_max_threads());
 					#pragma omp parallel
 					{
 						for(std::size_t ib01=0; ib01<list_Ab01.size(); ++ib01)
@@ -523,31 +471,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a1b2 = tools.get_Ds_ab(Label::ab::a1b2, Aa01, Ab2);
 									if(D_a1b2.empty())	continue;
 
-									Gpu_LR_Batch batch;
-									batch.Aa01 = &Aa01;
-									batch.Ab01 = &Ab01;
-									batch.Ab2 = &Ab2;
-									batch.D_b = &D_b;
-									batch.D_response = &D_a1b2;
-									lri_batches_3[omp_get_thread_num()].push_back(batch);
+									rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
+									rDs_a1b2.insert(Aa01, Ab2, D_a1b2);
+									const GPU_Data::Pack &D_mul = rDs_mul.insert_1st(Aa01, Ab01, {D_b.shape[0], D_b.shape[1], D_a1b2.shape[0]});
+									dim_0.input({D_b.shape[0], D_b.shape[1]}, D_a1b2.shape[0], D_b.shape[2]);
 								} // end for Ab2
 							} // end for Aa01
 						} // end for Ab01
 					} // end omp parallel
-					// Register the collected GEMM batches in one order; workers no longer contend on shared maps.
-					for(const auto &thread_batches : lri_batches_3)
-						for(const Gpu_LR_Batch &batch : thread_batches)
-						{
-							const TA &Aa01 = *batch.Aa01;
-							const TAC &Ab01 = *batch.Ab01;
-							const TAC &Ab2 = *batch.Ab2;
-							const Tensor<Tdata> &D_b = *batch.D_b;
-							const Tensor<Tdata> &D_a1b2 = *batch.D_response;
-							rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
-							rDs_a1b2.insert(Aa01, Ab2, D_a1b2);
-							const GPU_Data::Pack &D_mul = rDs_mul.insert_1st(Aa01, Ab01, {D_b.shape[0], D_b.shape[1], D_a1b2.shape[0]});
-							dim_0.input({D_b.shape[0], D_b.shape[1]}, D_a1b2.shape[0], D_b.shape[2]);
-						}
 						if(case_plan) case_plan->save_first({&rDs_b,&rDs_a1b2}, rDs_mul, nullptr, dim_0, nullptr);
 					}
 					else
@@ -584,7 +515,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 
 					if(!case_plan || !case_plan->second.ready)
 					{
-					std::vector<std::vector<Gpu_LR_Batch>> lri_batches_4(omp_get_max_threads());
 					#pragma omp parallel
 					{
 						for(std::size_t ia01=0; ia01<list_Aa01.size(); ++ia01) // A
@@ -607,36 +537,17 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
 									if (D_a.empty())	continue;
 
-									Gpu_LR_Batch batch;
-									batch.Aa01 = &Aa01;
-									batch.Aa2 = &Aa2;
-									batch.Ab01 = &Ab01;
-									batch.D_a = &D_a;
-									batch.D_a0b0 = &D_a0b0;
-									batch.D_mul = &D_mul;
-									lri_batches_4[omp_get_thread_num()].push_back(batch);
+									rDs_a.insert(Aa01, Aa2, D_a);
+									rDs_a0b0.insert(Aa01, Ab01, D_a0b0);
+									rDs_mul.insert_2nd(D_mul);
+									const GPU_Data::Pack &D_tmp = rDs_tmp.insert({D_mul.shape[1], D_mul.shape[2], D_a0b0.shape[0]});
+									rDs_output.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % period}, {D_a.shape[2], D_tmp.shape[0]});
+									dim_1.input({D_mul.shape[1], D_mul.shape[2]}, D_a0b0.shape[0], D_a0b0.shape[1]);
+									dim_2.input(D_a.shape[2], D_tmp.shape[0], {D_a.shape[0], D_a.shape[1]});
 								} // end for Ab01
 							}  // end for Aa2
 						} // end for Aa01
 					} // end omp parallel
-					// Register the collected GEMM batches in one order; workers no longer contend on shared maps.
-					for(const auto &thread_batches : lri_batches_4)
-						for(const Gpu_LR_Batch &batch : thread_batches)
-						{
-							const TA &Aa01 = *batch.Aa01;
-							const TAC &Aa2 = *batch.Aa2;
-							const TAC &Ab01 = *batch.Ab01;
-							const Tensor<Tdata> &D_a = *batch.D_a;
-							const Tensor<Tdata> &D_a0b0 = *batch.D_a0b0;
-							const GPU_Data::Pack &D_mul = *batch.D_mul;
-							rDs_a.insert(Aa01, Aa2, D_a);
-							rDs_a0b0.insert(Aa01, Ab01, D_a0b0);
-							rDs_mul.insert_2nd(D_mul);
-							const GPU_Data::Pack &D_tmp = rDs_tmp.insert({D_mul.shape[1], D_mul.shape[2], D_a0b0.shape[0]});
-							rDs_output.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % period}, {D_a.shape[2], D_tmp.shape[0]});
-							dim_1.input({D_mul.shape[1], D_mul.shape[2]}, D_a0b0.shape[0], D_a0b0.shape[1]);
-							dim_2.input(D_a.shape[2], D_tmp.shape[0], {D_a.shape[0], D_a.shape[1]});
-						}
 						if(case_plan) case_plan->save_second({&rDs_a,&rDs_a0b0}, rDs_mul, &rDs_tmp, rDs_output, dim_1, &dim_2);
 					}
 					else
@@ -720,7 +631,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a1b2 = tools.get_Ds_ab(Label::ab::a1b2, Aa01, Ab2);
 									if(D_a1b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a1b2.insert(Aa01, Ab2, D_a1b2);
@@ -773,7 +683,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a = tools.get_Ds_ab(Label::ab::a, Aa01, Aa2);
 									if (D_a.empty())	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a0b1.insert(Aa01, Ab01, D_a0b1);
@@ -860,7 +769,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a0b2 = tools.get_Ds_ab(Label::ab::a0b2, Aa01, Ab2);
 									if(D_a0b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a0b2.insert(Aa01, Ab2, D_a0b2);
@@ -913,7 +821,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a = tools.get_Ds_ab(Label::ab::a, Aa01, Aa2);
 									if (D_a.empty())	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a1b0.insert(Aa01, Ab01, D_a1b0);
@@ -1000,7 +907,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a0b2 = tools.get_Ds_ab(Label::ab::a0b2, Aa01, Ab2);
 									if(D_a0b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a0b2.insert(Aa01, Ab2, D_a0b2);
@@ -1053,7 +959,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a = Global_Func::find(Ds_a_transpose, Aa01, Aa2);
 									if (D_a.empty())	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a1b1.insert(Aa01, Ab01, D_a1b1);
@@ -1128,7 +1033,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					// D_mul = D_a * D_a2b1
 					if(!case_plan || !case_plan->first.ready)
 					{
-					std::vector<std::vector<Gpu_LR_Batch>> lri_batches_5(omp_get_max_threads());
 					#pragma omp parallel
 					{
 						for(std::size_t ia01=0; ia01<list_Aa01.size(); ++ia01)
@@ -1149,32 +1053,15 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b1 = tools.get_Ds_ab(Label::ab::a2b1, Aa2, Ab01);
 									if(D_a2b1.empty())	continue;
 
-									Gpu_LR_Batch batch;
-									batch.Aa01 = &Aa01;
-									batch.Aa2 = &Aa2;
-									batch.Ab01 = &Ab01;
-									batch.D_a = &D_a;
-									batch.D_response = &D_a2b1;
-									lri_batches_5[omp_get_thread_num()].push_back(batch);
+									rDs_a.insert(Aa01, Aa2, D_a);
+									rDs_a2b1.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % this->period}, D_a2b1);
+									const GPU_Data::Pack &D_mul = rDs_mul.insert_1st(Aa01, Ab01, {D_a2b1.shape[1], D_a.shape[0], D_a.shape[1]});
+									dim_0.input(D_a2b1.shape[1], {D_a.shape[0], D_a.shape[1]}, D_a2b1.shape[0]);
 
 								} // end for Aa2
 							} // end for Ab01
 						} // end for Aa01
 					} // end omp parallel
-					// Register the collected GEMM batches in one order; workers no longer contend on shared maps.
-					for(const auto &thread_batches : lri_batches_5)
-						for(const Gpu_LR_Batch &batch : thread_batches)
-						{
-							const TA &Aa01 = *batch.Aa01;
-							const TAC &Aa2 = *batch.Aa2;
-							const TAC &Ab01 = *batch.Ab01;
-							const Tensor<Tdata> &D_a = *batch.D_a;
-							const Tensor<Tdata> &D_a2b1 = *batch.D_response;
-							rDs_a.insert(Aa01, Aa2, D_a);
-							rDs_a2b1.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % this->period}, D_a2b1);
-							const GPU_Data::Pack &D_mul = rDs_mul.insert_1st(Aa01, Ab01, {D_a2b1.shape[1], D_a.shape[0], D_a.shape[1]});
-							dim_0.input(D_a2b1.shape[1], {D_a.shape[0], D_a.shape[1]}, D_a2b1.shape[0]);
-						}
 						if(case_plan) case_plan->save_first({&rDs_a,&rDs_a2b1}, rDs_mul, nullptr, dim_0, nullptr);
 					}
 					else
@@ -1210,7 +1097,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 
 					if(!case_plan || !case_plan->second.ready)
 					{
-					std::vector<std::vector<Gpu_LR_Batch>> lri_batches_6(omp_get_max_threads());
 					#pragma omp parallel
 					{
 						for(std::size_t ia01=0; ia01<list_Aa01.size(); ++ia01) // A
@@ -1233,36 +1119,17 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
 									if(D_b.empty())	continue;
 
-									Gpu_LR_Batch batch;
-									batch.Aa01 = &Aa01;
-									batch.Ab01 = &Ab01;
-									batch.Ab2 = &Ab2;
-									batch.D_b = &D_b;
-									batch.D_a0b0 = &D_a0b0;
-									batch.D_mul = &D_mul;
-									lri_batches_6[omp_get_thread_num()].push_back(batch);
+									rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
+									rDs_a0b0.insert(Aa01, Ab01, D_a0b0);
+									rDs_mul.insert_2nd(D_mul);
+									const GPU_Data::Pack &D_tmp = rDs_tmp.insert({D_a0b0.shape[1], D_mul.shape[0], D_mul.shape[1]});
+									rDs_output.insert(Aa01, Ab2, {D_tmp.shape[2], D_b.shape[2]});
+									dim_1.input(D_a0b0.shape[1], {D_mul.shape[0], D_mul.shape[1]}, D_a0b0.shape[0]);
+									dim_2.input(D_tmp.shape[2], D_b.shape[2], {D_b.shape[0], D_b.shape[1]});
 								} // end for Aa01
 							} // end for Ab2
 						} // end for Ab01
 					} // end omp parallel
-					// Register the collected GEMM batches in one order; workers no longer contend on shared maps.
-					for(const auto &thread_batches : lri_batches_6)
-						for(const Gpu_LR_Batch &batch : thread_batches)
-						{
-							const TA &Aa01 = *batch.Aa01;
-							const TAC &Ab01 = *batch.Ab01;
-							const TAC &Ab2 = *batch.Ab2;
-							const Tensor<Tdata> &D_b = *batch.D_b;
-							const Tensor<Tdata> &D_a0b0 = *batch.D_a0b0;
-							const GPU_Data::Pack &D_mul = *batch.D_mul;
-							rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
-							rDs_a0b0.insert(Aa01, Ab01, D_a0b0);
-							rDs_mul.insert_2nd(D_mul);
-							const GPU_Data::Pack &D_tmp = rDs_tmp.insert({D_a0b0.shape[1], D_mul.shape[0], D_mul.shape[1]});
-							rDs_output.insert(Aa01, Ab2, {D_tmp.shape[2], D_b.shape[2]});
-							dim_1.input(D_a0b0.shape[1], {D_mul.shape[0], D_mul.shape[1]}, D_a0b0.shape[0]);
-							dim_2.input(D_tmp.shape[2], D_b.shape[2], {D_b.shape[0], D_b.shape[1]});
-						}
 						if(case_plan) case_plan->save_second({&rDs_b,&rDs_a0b0}, rDs_mul, &rDs_tmp, rDs_output, dim_1, &dim_2);
 					}
 					else
@@ -1346,7 +1213,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b0 = tools.get_Ds_ab(Label::ab::a2b0, Aa2, Ab01);
 									if(D_a2b0.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b0.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % this->period}, D_a2b0);
@@ -1399,7 +1265,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
 									if(D_b.empty())	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a0b1.insert(Aa01, Ab01, D_a0b1);
@@ -1486,7 +1351,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b1 = tools.get_Ds_ab(Label::ab::a2b1, Aa2, Ab01);
 									if(D_a2b1.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b1.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % this->period}, D_a2b1);
@@ -1539,7 +1403,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
 									if(D_b.empty())	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a1b0.insert(Aa01, Ab01, D_a1b0);
@@ -1626,7 +1489,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b0 = tools.get_Ds_ab(Label::ab::a2b0, Aa2, Ab01);
 									if(D_a2b0.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b0.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % this->period}, D_a2b0);
@@ -1679,7 +1541,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_b = tools.get_Ds_ab(Label::ab::b, Ab01, Ab2);
 									if(D_b.empty())	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a1b1.insert(Aa01, Ab01, D_a1b1);
@@ -1754,7 +1615,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					// D_mul = D_a * D_a2b2
 					if(!case_plan || !case_plan->first.ready)
 					{
-					std::vector<std::vector<Gpu_LR_Batch>> lri_batches_7(omp_get_max_threads());
 					#pragma omp parallel
 					{
 						for(std::size_t ia01=0; ia01<list_Aa01.size(); ++ia01)
@@ -1775,31 +1635,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b2 = tools.get_Ds_ab(Label::ab::a2b2, Aa2, Ab2);
 									if(D_a2b2.empty())	continue;
 
-									Gpu_LR_Batch batch;
-									batch.Aa01 = &Aa01;
-									batch.Aa2 = &Aa2;
-									batch.Ab2 = &Ab2;
-									batch.D_a = &D_a;
-									batch.D_response = &D_a2b2;
-									lri_batches_7[omp_get_thread_num()].push_back(batch);
+									rDs_a.insert(Aa01, Aa2, D_a);
+									rDs_a2b2.insert(Aa2.first, {Ab2.first, (Ab2.second - Aa2.second) % period}, D_a2b2);
+									rDs_mul.insert_1st(Aa01, Ab2, {D_a2b2.shape[1], D_a.shape[0], D_a.shape[1]});
+									dim_0.input(D_a2b2.shape[1], {D_a.shape[0], D_a.shape[1]}, D_a2b2.shape[0]);
 								} // end for Ab2
 							} // end for Aa2
 						} // end for Aa01
 					} // end omp parallel
-					// Register the collected GEMM batches in one order; workers no longer contend on shared maps.
-					for(const auto &thread_batches : lri_batches_7)
-						for(const Gpu_LR_Batch &batch : thread_batches)
-						{
-							const TA &Aa01 = *batch.Aa01;
-							const TAC &Aa2 = *batch.Aa2;
-							const TAC &Ab2 = *batch.Ab2;
-							const Tensor<Tdata> &D_a = *batch.D_a;
-							const Tensor<Tdata> &D_a2b2 = *batch.D_response;
-							rDs_a.insert(Aa01, Aa2, D_a);
-							rDs_a2b2.insert(Aa2.first, {Ab2.first, (Ab2.second - Aa2.second) % period}, D_a2b2);
-							rDs_mul.insert_1st(Aa01, Ab2, {D_a2b2.shape[1], D_a.shape[0], D_a.shape[1]});
-							dim_0.input(D_a2b2.shape[1], {D_a.shape[0], D_a.shape[1]}, D_a2b2.shape[0]);
-						}
 						if(case_plan) case_plan->save_first({&rDs_a,&rDs_a2b2}, rDs_mul, nullptr, dim_0, nullptr);
 					}
 					else
@@ -1835,7 +1678,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 
 					if(!case_plan || !case_plan->second.ready)
 					{
-					std::vector<std::vector<Gpu_LR_Batch>> lri_batches_8(omp_get_max_threads());
 					#pragma omp parallel
 					{
 						for (std::size_t ia01 = 0; ia01 < list_Aa01.size(); ++ia01)
@@ -1859,36 +1701,17 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
 									if (!D_mul.exist)	continue;
 
-									Gpu_LR_Batch batch;
-									batch.Aa01 = &Aa01;
-									batch.Ab01 = &Ab01;
-									batch.Ab2 = &Ab2;
-									batch.D_b = &D_b;
-									batch.D_a0b0 = &D_a0b0;
-									batch.D_mul = &D_mul;
-									lri_batches_8[omp_get_thread_num()].push_back(batch);
+									rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
+									rDs_a0b0.insert(Aa01, Ab01, D_a0b0);
+									rDs_mul.insert_2nd(D_mul);
+									const GPU_Data::Pack &D_tmp = rDs_tmp.insert({D_a0b0.shape[1], D_mul.shape[0], D_mul.shape[1]});
+									rDs_output.insert(Aa01, Ab01, {D_tmp.shape[2], D_b.shape[0]});
+									dim_1.input(D_a0b0.shape[1], {D_mul.shape[0], D_mul.shape[1]}, D_a0b0.shape[0]);
+									dim_2.input(D_tmp.shape[2], D_b.shape[0], {D_b.shape[1], D_b.shape[2]});
 								} // end for Aa01
 							} // end for Ab2
 						} // end for Ab01
 					} // end omp parallel
-					// Register the collected GEMM batches in one order; workers no longer contend on shared maps.
-					for(const auto &thread_batches : lri_batches_8)
-						for(const Gpu_LR_Batch &batch : thread_batches)
-						{
-							const TA &Aa01 = *batch.Aa01;
-							const TAC &Ab01 = *batch.Ab01;
-							const TAC &Ab2 = *batch.Ab2;
-							const Tensor<Tdata> &D_b = *batch.D_b;
-							const Tensor<Tdata> &D_a0b0 = *batch.D_a0b0;
-							const GPU_Data::Pack &D_mul = *batch.D_mul;
-							rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
-							rDs_a0b0.insert(Aa01, Ab01, D_a0b0);
-							rDs_mul.insert_2nd(D_mul);
-							const GPU_Data::Pack &D_tmp = rDs_tmp.insert({D_a0b0.shape[1], D_mul.shape[0], D_mul.shape[1]});
-							rDs_output.insert(Aa01, Ab01, {D_tmp.shape[2], D_b.shape[0]});
-							dim_1.input(D_a0b0.shape[1], {D_mul.shape[0], D_mul.shape[1]}, D_a0b0.shape[0]);
-							dim_2.input(D_tmp.shape[2], D_b.shape[0], {D_b.shape[1], D_b.shape[2]});
-						}
 						if(case_plan) case_plan->save_second({&rDs_b,&rDs_a0b0}, rDs_mul, &rDs_tmp, rDs_output, dim_1, &dim_2);
 					}
 					else
@@ -1972,7 +1795,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b2 = tools.get_Ds_ab(Label::ab::a2b2, Aa2, Ab2);
 									if(D_a2b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b2.insert(Aa2.first, {Ab2.first, (Ab2.second - Aa2.second) % period}, D_a2b2);
@@ -2024,7 +1846,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
 									if (!D_mul.exist)	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a0b1.insert(Aa01, Ab01, D_a0b1);
@@ -2111,7 +1932,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b2 = tools.get_Ds_ab(Label::ab::a2b2, Aa2, Ab2);
 									if(D_a2b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b2.insert(Aa2.first, {Ab2.first, (Ab2.second - Aa2.second) % period}, D_a2b2);
@@ -2163,7 +1983,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
 									if (!D_mul.exist)	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a1b0.insert(Aa01, Ab01, D_a1b0);
@@ -2250,7 +2069,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b2 = tools.get_Ds_ab(Label::ab::a2b2, Aa2, Ab2);
 									if(D_a2b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b2.insert(Aa2.first, {Ab2.first, (Ab2.second - Aa2.second) % period}, D_a2b2);
@@ -2302,7 +2120,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
 									if (!D_mul.exist)	continue;
 
-									#pragma omp critical(rDs_output)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a1b1.insert(Aa01, Ab01, D_a1b1);
@@ -2390,7 +2207,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a1b2 = tools.get_Ds_ab(Label::ab::a1b2, Aa01, Ab2);
 									if(D_a1b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul_1)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a1b2.insert(Aa01, Ab2, D_a1b2);
@@ -2440,7 +2256,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b1 = tools.get_Ds_ab(Label::ab::a2b1, Aa2, Ab01);
 									if(D_a2b1.empty())	continue;
 
-									#pragma omp critical(rDs_mul_2)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b1.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % period}, D_a2b1);
@@ -2485,7 +2300,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 								const GPU_Data::Pack &D_mul_2 = rDs_mul_2.find_2nd(Aa01, Ab01);
 								if (!D_mul_2.exist)	continue;
 
-								#pragma omp critical(rDs_output)
 								{
 									rDs_mul_1.insert_2nd(D_mul_1);
 									rDs_mul_2.insert_2nd(D_mul_2);
@@ -2555,7 +2369,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a0b2 = tools.get_Ds_ab(Label::ab::a0b2, Aa01, Ab2);
 									if(D_a0b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul_1)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a0b2.insert(Aa01, Ab2, D_a0b2);
@@ -2605,7 +2418,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b0 = tools.get_Ds_ab(Label::ab::a2b0, Aa2, Ab01);
 									if(D_a2b0.empty())	continue;
 
-									#pragma omp critical(rDs_mul_2)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b0.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % period}, D_a2b0);
@@ -2650,7 +2462,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 								const GPU_Data::Pack &D_mul_2 = rDs_mul_2.find_2nd(Aa01, Ab01);
 								if (!D_mul_2.exist)	continue;
 
-								#pragma omp critical(rDs_output)
 								{
 									rDs_mul_1.insert_2nd(D_mul_1);
 									rDs_mul_2.insert_2nd(D_mul_2);
@@ -2720,7 +2531,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a0b2 = tools.get_Ds_ab(Label::ab::a0b2, Aa01, Ab2);
 									if(D_a0b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul_1)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a0b2.insert(Aa01, Ab2, D_a0b2);
@@ -2770,7 +2580,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b1 = tools.get_Ds_ab(Label::ab::a2b1, Aa2, Ab01);
 									if(D_a2b1.empty())	continue;
 
-									#pragma omp critical(rDs_mul_2)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b1.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % period}, D_a2b1);
@@ -2815,7 +2624,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 								const GPU_Data::Pack &D_mul_2 = rDs_mul_2.find_2nd(Aa01, Ab01);
 								if (!D_mul_2.exist)	continue;
 
-								#pragma omp critical(rDs_output)
 								{
 									rDs_mul_1.insert_2nd(D_mul_1);
 									rDs_mul_2.insert_2nd(D_mul_2);
@@ -2885,7 +2693,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a1b2 = tools.get_Ds_ab(Label::ab::a1b2, Aa01, Ab2);
 									if(D_a1b2.empty())	continue;
 
-									#pragma omp critical(rDs_mul_1)
 									{
 										rDs_b.insert(Ab01.first, {Ab2.first, (Ab2.second - Ab01.second) % period}, D_b);
 										rDs_a1b2.insert(Aa01, Ab2, D_a1b2);
@@ -2935,7 +2742,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 									const Tensor<Tdata> &D_a2b0 = tools.get_Ds_ab(Label::ab::a2b0, Aa2, Ab01);
 									if(D_a2b0.empty())	continue;
 
-									#pragma omp critical(rDs_mul_2)
 									{
 										rDs_a.insert(Aa01, Aa2, D_a);
 										rDs_a2b0.insert(Aa2.first, {Ab01.first, (Ab01.second - Aa2.second) % period}, D_a2b0);
@@ -2980,7 +2786,6 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 								const GPU_Data::Pack &D_mul_2 = rDs_mul_2.find_2nd(Aa01, Ab01);
 								if (!D_mul_2.exist)	continue;
 
-								#pragma omp critical(rDs_output)
 								{
 									rDs_mul_1.insert_2nd(D_mul_1);
 									rDs_mul_2.insert_2nd(D_mul_2);

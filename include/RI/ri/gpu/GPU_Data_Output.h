@@ -22,10 +22,11 @@ namespace GPU_Data
 {
 
 template<typename TA, typename TAC, typename Tdata_CPU>
-class Output
+class Output : public Pair_Packs<TA,TAC>
 {
+    Thread_Batch<const Pack*> pending;
   public:
-	GPU_Backend::Queue queue_ = nullptr;
+    GPU_Backend::Queue queue_ = nullptr;
 	using Tdata_GPU = GPU_Backend::Type_to_GPU<Tdata_CPU>;
 	using Same_data_layout = std::integral_constant<
 		bool,
@@ -33,24 +34,30 @@ class Output
 
 	const Pack &insert(const TA &Aa, const TAC &Ab, const Shape_Vector &shape)
 	{
-		Pack &pack = this->ptrList[Aa][Ab];
+		Pack &pack = this->local_packs()[Aa][Ab];
 		if(!pack.exist)
 		{
 			pack.exist = true;
-			pack.pos = this->totalSize;
 			pack.shape = shape;
-			this->totalSize += shape.get_shape_all();
 		}
-		this->h_array.push_back(pack);
+		pending.push_back(&pack);
 		return pack;
 	}
 
+    void prepare_layout()
+    {
+        if(!pending.size()) return;
+        this->merge_packs();
+        pending.for_each([&](const Pack *p){h_array.push_back(*p);});
+        pending.release(); this->release_local_packs();
+    }
 	void upload(GPU_Backend::Queue queue)
 	{
-		this->queue_ = queue;
+        this->queue_=queue;
+        prepare_layout();
 		GPU_Backend::allocate(&this->d_data, this->totalSize, queue);
 		GPU_Backend::memset(
-			this->d_data, 0, totalSize * sizeof(Tdata_GPU), queue);
+			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
 		const std::size_t batchCount = this->h_array.size();
 		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
@@ -116,11 +123,9 @@ class Output
 	}
 
   public:
-	std::size_t totalSize = 0;                  // 总的数据数量
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
 	std::vector<Pack> h_array;					// 记录每个batch的Pack
 	Tdata_GPU **d_array = nullptr;					// 记录每个batch的 d_data 指针（GPU）
-	std::map<TA, std::map<TAC, Pack>> ptrList;	// 记录每个原子对的Pack
 };
 
 }

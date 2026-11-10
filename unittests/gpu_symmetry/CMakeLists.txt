@@ -14,7 +14,12 @@ find_package(LAPACK REQUIRED)
 
 add_executable(test_lri_gpu_symmetry test_lri_gpu_symmetry.cpp)
 add_executable(test_gpu_resident test_gpu_resident.cpp)
-foreach(test_target test_lri_gpu_symmetry test_gpu_resident)
+set(test_targets test_lri_gpu_symmetry test_gpu_resident)
+if(ENABLE_GPU)
+  add_executable(test_pack_threads test_pack_threads.cpp)
+  list(APPEND test_targets test_pack_threads)
+endif()
+foreach(test_target ${test_targets})
 target_compile_features(${test_target} PRIVATE cxx_std_14)
 target_include_directories(${test_target} PRIVATE
   "${LIBRI_ROOT}/include" "${LIBCOMM_ROOT}/include" "${CEREAL_ROOT}/include")
@@ -31,6 +36,12 @@ if(ENABLE_GPU)
 endif()
 
 endforeach()
+
+if(ENABLE_GPU)
+  # The skip check calls CUDA directly; DDLA keeps its runtime dependency private.
+  find_package(CUDAToolkit REQUIRED)
+  target_link_libraries(test_gpu_resident PRIVATE CUDA::cudart)
+endif()
 
 enable_testing()
 add_test(NAME lri_symmetry COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
@@ -53,3 +64,12 @@ foreach(backend cpu gpu)
     endforeach()
   endforeach()
 endforeach()
+
+if(ENABLE_GPU)
+  foreach(threads 1 4 6)
+    add_test(NAME pack_threads_${threads} COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
+      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_pack_threads> ${MPIEXEC_POSTFLAGS})
+    set_tests_properties(pack_threads_${threads} PROPERTIES TIMEOUT 180
+      ENVIRONMENT "OMP_NUM_THREADS=${threads};OMP_PROC_BIND=false;MKL_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+  endforeach()
+endif()

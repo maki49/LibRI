@@ -4,6 +4,10 @@
 // =================================
 
 #pragma once
+#include <omp.h>
+#include <map>
+#include <vector>
+#include "../../global/Shape_Vector.h"
 
 #ifdef __GPU_RI
 
@@ -20,6 +24,50 @@ struct Pack
 	Shape_Vector shape;
 	int thread_num = 0;
 };
+// Related operands and dimensions append in the same worker-local order.
+// Flat arrays own values; caches never retain pointers into these temporary chunks.
+template<typename T>
+class Thread_Batch
+{
+    struct alignas(64) Chunk { std::vector<T> values; };
+    std::vector<Chunk> chunks{static_cast<std::size_t>(omp_get_max_threads())};
+public:
+    void push_back(const T &value) { chunks[omp_get_thread_num()].values.push_back(value); }
+    std::size_t size() const { std::size_t n=0; for(const auto &c:chunks) n+=c.values.size(); return n; }
+    template<typename F> void for_each(F f) const { for(const auto &c:chunks) for(const auto &v:c.values) f(v); }
+    void release() { for(auto &c:chunks) std::vector<T>().swap(c.values); }
+};
+
+// Register unique pairs privately, then resolve one shared offset per block.
+template<typename TA, typename TAC, typename Record=Pack>
+class Pair_Packs
+{
+    struct alignas(64) Shard { std::map<TA,std::map<TAC,Record>> values; };
+    std::vector<Shard> shards{static_cast<std::size_t>(omp_get_max_threads())};
+protected:
+    auto& local_packs() { return shards[omp_get_thread_num()].values; }
+    template<typename F> void merge_packs(F first_insert)
+    {
+        for(auto &shard:shards) for(auto &row:shard.values) for(auto &block:row.second)
+        {
+            Record &local=block.second;
+            Pack &shared=ptrList[row.first][block.first];
+            if(!shared.exist)
+            {
+                shared=local; shared.pos=totalSize;
+                totalSize+=shared.shape.get_shape_all();
+                first_insert(local,shared);
+            }
+            static_cast<Pack&>(local)=shared;
+        }
+    }
+    void merge_packs() { merge_packs([](const Record&,Pack&){}); }
+    void release_local_packs() { for(auto &shard:shards) shard.values.clear(); }
+public:
+    std::size_t totalSize=0;
+    std::map<TA,std::map<TAC,Pack>> ptrList;
+};
+
 
 }
 

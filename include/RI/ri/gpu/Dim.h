@@ -9,26 +9,33 @@
 
 #include "../../global/gpu/GPU_Backend.h"
 #include <vector>
+#include "GPU_Data_Pack.h"
 
 namespace RI
 {
 
 class Dim
 {
+    GPU_Data::Thread_Batch<int> pending;
   public:
-	GPU_Backend::Queue queue_ = nullptr;
+    GPU_Backend::Queue queue_ = nullptr;
 	void input(const int shape)
 	{
-		this->shapes.push_back(shape);
+		pending.push_back(shape);
 	}
 	void input(const int shape1, const int shape2)
 	{
-		this->shapes.push_back(shape1 * shape2);
+		pending.push_back(shape1 * shape2);
 	}
 
+    void prepare_layout()
+    {
+        pending.for_each([&](int shape){shapes.push_back(shape);}); pending.release();
+    }
 	void upload(GPU_Backend::Queue queue)
 	{
-		this->queue_ = queue;
+        this->queue_=queue;
+        prepare_layout();
 		GPU_Backend::allocate(&this->d_m, this->shapes.size() + 1, queue);
 		GPU_Backend::upload(
 			this->shapes.size(), this->shapes.data(), this->d_m, queue);

@@ -73,8 +73,10 @@ struct Gpu_LR_Case_Plan
         }
     }
 
-    static void save_dims(Stage &stage, const Dim_mnk &dim0, const Dim_mnk *dim1)
+    static void save_dims(Stage &stage, Dim_mnk &dim0, Dim_mnk *dim1)
     {
+        dim0.m.prepare_layout(); dim0.n.prepare_layout(); dim0.k.prepare_layout();
+        if(dim1) {dim1->m.prepare_layout(); dim1->n.prepare_layout(); dim1->k.prepare_layout();}
         stage.m0 = dim0.m.shapes;
         stage.n0 = dim0.n.shapes;
         stage.k0 = dim0.k.shapes;
@@ -99,9 +101,10 @@ struct Gpu_LR_Case_Plan
         }
     }
 
-    void save_first(std::initializer_list<Input*> inputs, const Mul &mul,
-                    const Tmp *tmp, const Dim_mnk &dim0, const Dim_mnk *dim1)
+    void save_first(std::initializer_list<Input*> inputs, Mul &mul,
+                    Tmp *tmp, Dim_mnk &dim0, Dim_mnk *dim1)
     {
+        mul.prepare_first(); if(tmp) tmp->prepare_layout();
         save_inputs(first, inputs);
         first.mul_map = mul.ptrList;
         first.mul_first = mul.h_array_1;
@@ -131,10 +134,11 @@ struct Gpu_LR_Case_Plan
         load_dims(first, dim0, dim1);
     }
 
-    void save_second(std::initializer_list<Input*> inputs, const Mul &mul,
-                     const Tmp *tmp, const Output &output,
-                     const Dim_mnk &dim0, const Dim_mnk *dim1)
+    void save_second(std::initializer_list<Input*> inputs, Mul &mul,
+                     Tmp *tmp, Output &output,
+                     Dim_mnk &dim0, Dim_mnk *dim1)
     {
+        mul.prepare_second(); output.prepare_layout(); if(tmp) tmp->prepare_layout();
         save_inputs(second, inputs);
         second.mul_second = mul.h_array_2;
         if(tmp)

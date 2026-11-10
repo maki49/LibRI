@@ -19,25 +19,29 @@ namespace GPU_Data
 template<typename TA, typename TAC, typename Tdata_CPU>
 class Tmp
 {
+    Thread_Batch<Pack> pending;
   public:
-	GPU_Backend::Queue queue_ = nullptr;
+    GPU_Backend::Queue queue_ = nullptr;
 	using Tdata_GPU = GPU_Backend::Type_to_GPU<Tdata_CPU>;
 
-	const Pack &insert(const Shape_Vector &shape)
-	{
-		Pack pack;
-		pack.exist = true;
-		pack.pos = this->totalSize;
-		pack.shape = shape;
-		this->totalSize += shape.get_shape_all();
-		this->h_array.push_back(pack);
-		return this->h_array.back();
-	}
+    Pack insert(const Shape_Vector &shape)
+    {
+        Pack pack; pack.exist=true; pack.shape=shape;
+        pending.push_back(pack); return pack;
+    }
+    void prepare_layout()
+    {
+        pending.for_each([&](Pack pack) {
+            pack.pos=totalSize; totalSize+=pack.shape.get_shape_all(); h_array.push_back(pack);
+        });
+        pending.release();
+    }
 
 	std::vector<GPU_Backend::Int> upload(
 		const std::size_t memory_limit, GPU_Backend::Queue queue)
 	{
-		this->queue_ = queue;
+        this->queue_=queue;
+		prepare_layout();
 		const std::size_t size_limit = std::min(this->totalSize, memory_limit / sizeof(Tdata_GPU));
 		const std::vector<std::vector<Pack>> h_array_segments = segment_points(this->h_array, size_limit);
 
