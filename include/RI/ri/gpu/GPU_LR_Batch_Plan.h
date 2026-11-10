@@ -37,7 +37,7 @@ struct Gpu_LR_Case_Plan
         std::vector<GPU_Data::Pack> mul_first;
         std::vector<GPU_Data::Pack> mul_second;
         std::size_t mul_size = 0;
-        std::vector<GPU_Data::Pack> tmp_array;
+        std::vector<std::size_t> tmp_array;
         std::size_t tmp_size = 0;
         Pack_Map output_map;
         std::vector<GPU_Data::Pack> output_array;
