@@ -51,7 +51,8 @@ class Dim
 		return this->d_m;
 	}
 
-	std::vector<int> shapes;
+	GPU_Data::HostMemoryResource host_storage{GPU_Data::HOST_BUFFER_MAPPING_THRESHOLD};
+    std::pmr::vector<int> shapes{&host_storage};
 	int* d_m = nullptr;
 };
 

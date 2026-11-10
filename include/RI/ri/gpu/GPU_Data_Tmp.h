@@ -45,7 +45,7 @@ class Tmp
             if(size>limit) throw std::length_error("LibRI temporary tensor exceeds segment capacity");
         GPU_Backend::allocate(&d_data,limit, queue);
         GPU_Backend::memset(d_data,0,limit*sizeof(Tdata_GPU),queue);
-        std::vector<Tdata_GPU*> host_pointers;
+
         host_pointers.reserve(h_array.size());
         std::vector<GPU_Backend::Int> segments;
         std::size_t used=0;
@@ -70,7 +70,9 @@ class Tmp
 
 	std::size_t totalSize = 0;					// 总的数据数量
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
-	std::vector<std::size_t> h_array;					// 记录每个batch的Pack
+	HostMemoryResource host_storage{HOST_BUFFER_MAPPING_THRESHOLD};
+    std::pmr::vector<Tdata_GPU*> host_pointers{&host_storage};
+    std::pmr::vector<std::size_t> h_array{&host_storage};					// 记录每个batch的Pack
 	Tdata_GPU **d_array = nullptr;					// 记录每个batch的 d_data 指针（GPU）
 };
 

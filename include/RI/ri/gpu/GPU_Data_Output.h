@@ -60,11 +60,11 @@ class Output : public Pair_Packs<TA,TAC>
 			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
 		const std::size_t batchCount = this->h_array.size();
-		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
+		host_pointers.resize(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_[i] = this->d_data + this->h_array[i].pos;
+			host_pointers[i] = this->d_data + this->h_array[i].pos;
 		GPU_Backend::allocate(&this->d_array, batchCount, queue);
-		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
+		GPU_Backend::upload(batchCount, host_pointers.data(), this->d_array, queue);
 	}
 
 	void download(
@@ -124,7 +124,9 @@ class Output : public Pair_Packs<TA,TAC>
 
   public:
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
-	std::vector<Pack> h_array;					// 记录每个batch的Pack
+	HostMemoryResource host_storage{HOST_BUFFER_MAPPING_THRESHOLD};
+    std::pmr::vector<Tdata_GPU*> host_pointers{&host_storage};
+    std::pmr::vector<Pack> h_array{&host_storage};					// 记录每个batch的Pack
 	Tdata_GPU **d_array = nullptr;					// 记录每个batch的 d_data 指针（GPU）
 };
 

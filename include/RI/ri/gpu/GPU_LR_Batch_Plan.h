@@ -77,27 +77,27 @@ struct Gpu_LR_Case_Plan
     {
         dim0.m.prepare_layout(); dim0.n.prepare_layout(); dim0.k.prepare_layout();
         if(dim1) {dim1->m.prepare_layout(); dim1->n.prepare_layout(); dim1->k.prepare_layout();}
-        stage.m0 = dim0.m.shapes;
-        stage.n0 = dim0.n.shapes;
-        stage.k0 = dim0.k.shapes;
+        stage.m0.assign(dim0.m.shapes.begin(),dim0.m.shapes.end());
+        stage.n0.assign(dim0.n.shapes.begin(),dim0.n.shapes.end());
+        stage.k0.assign(dim0.k.shapes.begin(),dim0.k.shapes.end());
         if(dim1)
         {
-            stage.m1 = dim1->m.shapes;
-            stage.n1 = dim1->n.shapes;
-            stage.k1 = dim1->k.shapes;
+            stage.m1.assign(dim1->m.shapes.begin(),dim1->m.shapes.end());
+            stage.n1.assign(dim1->n.shapes.begin(),dim1->n.shapes.end());
+            stage.k1.assign(dim1->k.shapes.begin(),dim1->k.shapes.end());
         }
     }
 
     static void load_dims(const Stage &stage, Dim_mnk &dim0, Dim_mnk *dim1)
     {
-        dim0.m.shapes = stage.m0;
-        dim0.n.shapes = stage.n0;
-        dim0.k.shapes = stage.k0;
+        dim0.m.shapes.assign(stage.m0.begin(),stage.m0.end());
+        dim0.n.shapes.assign(stage.n0.begin(),stage.n0.end());
+        dim0.k.shapes.assign(stage.k0.begin(),stage.k0.end());
         if(dim1)
         {
-            dim1->m.shapes = stage.m1;
-            dim1->n.shapes = stage.n1;
-            dim1->k.shapes = stage.k1;
+            dim1->m.shapes.assign(stage.m1.begin(),stage.m1.end());
+            dim1->n.shapes.assign(stage.n1.begin(),stage.n1.end());
+            dim1->k.shapes.assign(stage.k1.begin(),stage.k1.end());
         }
     }
 
@@ -107,11 +107,11 @@ struct Gpu_LR_Case_Plan
         mul.prepare_first(); if(tmp) tmp->prepare_layout();
         save_inputs(first, inputs);
         first.mul_map = mul.ptrList;
-        first.mul_first = mul.h_array_1;
+        first.mul_first.assign(mul.h_array_1.begin(),mul.h_array_1.end());
         first.mul_size = mul.totalSize;
         if(tmp)
         {
-            first.tmp_array = tmp->h_array;
+            first.tmp_array.assign(tmp->h_array.begin(),tmp->h_array.end());
             first.tmp_size = tmp->totalSize;
         }
         save_dims(first, dim0, dim1);
@@ -124,11 +124,11 @@ struct Gpu_LR_Case_Plan
     {
         load_inputs(first, inputs, sources);
         mul.ptrList = first.mul_map;
-        mul.h_array_1 = first.mul_first;
+        mul.h_array_1.assign(first.mul_first.begin(),first.mul_first.end());
         mul.totalSize = first.mul_size;
         if(tmp)
         {
-            tmp->h_array = first.tmp_array;
+            tmp->h_array.assign(first.tmp_array.begin(),first.tmp_array.end());
             tmp->totalSize = first.tmp_size;
         }
         load_dims(first, dim0, dim1);
@@ -140,14 +140,14 @@ struct Gpu_LR_Case_Plan
     {
         mul.prepare_second(); output.prepare_layout(); if(tmp) tmp->prepare_layout();
         save_inputs(second, inputs);
-        second.mul_second = mul.h_array_2;
+        second.mul_second.assign(mul.h_array_2.begin(),mul.h_array_2.end());
         if(tmp)
         {
-            second.tmp_array = tmp->h_array;
+            second.tmp_array.assign(tmp->h_array.begin(),tmp->h_array.end());
             second.tmp_size = tmp->totalSize;
         }
         second.output_map = output.ptrList;
-        second.output_array = output.h_array;
+        second.output_array.assign(output.h_array.begin(),output.h_array.end());
         second.output_size = output.totalSize;
         save_dims(second, dim0, dim1);
         second.ready = true;
@@ -159,14 +159,14 @@ struct Gpu_LR_Case_Plan
                      Dim_mnk &dim0, Dim_mnk *dim1) const
     {
         load_inputs(second, inputs, sources);
-        mul.h_array_2 = second.mul_second;
+        mul.h_array_2.assign(second.mul_second.begin(),second.mul_second.end());
         if(tmp)
         {
-            tmp->h_array = second.tmp_array;
+            tmp->h_array.assign(second.tmp_array.begin(),second.tmp_array.end());
             tmp->totalSize = second.tmp_size;
         }
         output.ptrList = second.output_map;
-        output.h_array = second.output_array;
+        output.h_array.assign(second.output_array.begin(),second.output_array.end());
         output.totalSize = second.output_size;
         load_dims(second, dim0, dim1);
     }

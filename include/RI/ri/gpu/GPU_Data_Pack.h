@@ -7,6 +7,11 @@
 #include <omp.h>
 #include <map>
 #include <memory_resource>
+#include <new>
+#if defined(__unix__) || defined(__APPLE__)
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 #include <vector>
 #include "../../global/Shape_Vector.h"
 
@@ -17,6 +22,62 @@ namespace RI
 
 namespace GPU_Data
 {
+
+inline constexpr std::size_t HOST_BUFFER_MAPPING_THRESHOLD = 64 * 1024;
+
+// Metadata chunks must return to the OS after packing, rather than remain
+// resident in per-worker malloc arenas. Larger alignments and non-POSIX
+// platforms use the standard resource.
+class HostMemoryResource : public std::pmr::memory_resource
+{
+	const std::size_t minimum_mapping_size;
+
+	bool use_mapping(std::size_t bytes, std::size_t alignment) const
+	{
+#if defined(__unix__) || defined(__APPLE__)
+		static const long page_size = ::sysconf(_SC_PAGESIZE);
+		return bytes >= minimum_mapping_size && page_size > 0 &&
+			   (std::size_t(page_size) & (std::size_t(page_size) - 1)) == 0 &&
+			   alignment <= std::size_t(page_size);
+#else
+		return false;
+#endif
+	}
+
+	void* do_allocate(std::size_t bytes, std::size_t alignment) override
+	{
+#if defined(__unix__) || defined(__APPLE__)
+		if (use_mapping(bytes, alignment))
+		{
+			void* memory = ::mmap(nullptr, bytes ? bytes : 1, PROT_READ | PROT_WRITE,
+								  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			if (memory == MAP_FAILED) throw std::bad_alloc();
+			return memory;
+		}
+#endif
+		return std::pmr::new_delete_resource()->allocate(bytes, alignment);
+	}
+
+	void do_deallocate(void* memory, std::size_t bytes, std::size_t alignment) override
+	{
+#if defined(__unix__) || defined(__APPLE__)
+		if (use_mapping(bytes, alignment))
+		{
+			::munmap(memory, bytes ? bytes : 1);
+			return;
+		}
+#endif
+		std::pmr::new_delete_resource()->deallocate(memory, bytes, alignment);
+	}
+
+	bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override
+	{
+		return this == &other;
+	}
+
+public:
+	explicit HostMemoryResource(std::size_t minimum = 0) : minimum_mapping_size(minimum) {}
+};
 
 struct Pack
 {
@@ -30,13 +91,17 @@ struct Pack
 template<typename T>
 class Thread_Batch
 {
-    struct alignas(64) Chunk { std::vector<T> values; };
+    struct alignas(64) Chunk
+    {
+        HostMemoryResource storage{HOST_BUFFER_MAPPING_THRESHOLD};
+        std::pmr::vector<T> values{&storage};
+    };
     std::vector<Chunk> chunks{static_cast<std::size_t>(omp_get_max_threads())};
 public:
     void push_back(const T &value) { chunks[omp_get_thread_num()].values.push_back(value); }
     std::size_t size() const { std::size_t n=0; for(const auto &c:chunks) n+=c.values.size(); return n; }
     template<typename F> void for_each(F f) const { for(const auto &c:chunks) for(const auto &v:c.values) f(v); }
-    void release() { for(auto &c:chunks) std::vector<T>().swap(c.values); }
+    void release() { for(auto &c:chunks) std::pmr::vector<T>(c.values.get_allocator()).swap(c.values); }
 };
 
 // Register unique pairs privately, then resolve one shared offset per block.
@@ -47,7 +112,8 @@ class Pair_Packs
     using Local_Map=std::pmr::map<TA,std::pmr::map<TAC,Record>>;
     struct alignas(64) Shard
     {
-        std::pmr::monotonic_buffer_resource storage;
+        HostMemoryResource upstream;
+        std::pmr::monotonic_buffer_resource storage{&upstream};
         Local_Map values{&storage};
     };
     std::vector<Shard> shards{static_cast<std::size_t>(omp_get_max_threads())};

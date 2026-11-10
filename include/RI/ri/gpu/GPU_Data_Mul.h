@@ -58,12 +58,12 @@ class Mul : public Pair_Packs<TA,TAC>
 			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
 		const std::size_t batchCount = this->h_array_1.size();
-		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
+		host_pointers_1.resize(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_[i] = this->d_data + this->h_array_1[i].pos;
+			host_pointers_1[i] = this->d_data + this->h_array_1[i].pos;
 		GPU_Backend::allocate(&this->d_array_1, batchCount, queue);
 		GPU_Backend::upload(
-			batchCount, d_array_.data(), this->d_array_1, queue);
+			batchCount, host_pointers_1.data(), this->d_array_1, queue);
 	}
 
 	const Pack &find_2nd(const TA &Aa, const TAC &Ab)
@@ -83,12 +83,12 @@ class Mul : public Pair_Packs<TA,TAC>
         this->queue_=queue;
         prepare_second();
 		const std::size_t batchCount = this->h_array_2.size();
-		std::vector<Tdata_GPU*> d_array_2_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
+		host_pointers_2.resize(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_2_[i] = this->d_data + this->h_array_2[i].pos;
+			host_pointers_2[i] = this->d_data + this->h_array_2[i].pos;
 		GPU_Backend::allocate(&this->d_array_2, batchCount, queue);
 		GPU_Backend::upload(
-			batchCount, d_array_2_.data(), this->d_array_2, queue);
+			batchCount, host_pointers_2.data(), this->d_array_2, queue);
 	}
 
 	~Mul()
@@ -99,8 +99,10 @@ class Mul : public Pair_Packs<TA,TAC>
 	}
 
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
-	std::vector<Pack> h_array_1;				// 记录每个batch的Pack
-	std::vector<Pack> h_array_2;				// 记录每个batch的Pack
+	HostMemoryResource host_storage{HOST_BUFFER_MAPPING_THRESHOLD};
+    std::pmr::vector<Tdata_GPU*> host_pointers_1{&host_storage},host_pointers_2{&host_storage};
+    std::pmr::vector<Pack> h_array_1{&host_storage};				// 记录每个batch的Pack
+	std::pmr::vector<Pack> h_array_2{&host_storage};				// 记录每个batch的Pack
 	Tdata_GPU **d_array_1 = nullptr;				// 记录每个batch的 d_data 指针（GPU）
 	Tdata_GPU **d_array_2 = nullptr;				// 记录每个batch的 d_data 指针（GPU）
 };
