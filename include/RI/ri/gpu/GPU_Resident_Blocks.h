@@ -52,6 +52,9 @@ class Resident_Blocks
 
   public:
     GPU_Backend::Queue& queue() { return this->context->queue(); }
+    // Layout buffers may outlive a contraction call and retain their allocator context.
+    const std::shared_ptr<GPU_Backend::Context>& context_owner() const { return context; }
+
 
     // If caches hits, return the key-address table;
     // else, allocate device memory, build the table and upload the data.

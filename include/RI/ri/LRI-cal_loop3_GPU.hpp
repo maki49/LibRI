@@ -44,16 +44,21 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 	// Mutable atom filters can change the batch graph without changing tensors.
 	// Keep the cache for the base, no-op filter only.
 	const bool cacheable = typeid(*this->filter_atom) == typeid(Filter_Atom<TA, TAC>);
+    // Every GPU call retains the same allocation context, independently of
+    // local filter/cache hits. Per-call execution-context creation stays collective.
+    if(!this->gpu_lr_plan_cache)
+        this->gpu_lr_plan_cache.reset(new Gpu_LR_Plan_Cache<TA, TC, Tdata>());
+    Gpu_LR_Plan_Cache<TA, TC, Tdata> &cache = *this->gpu_lr_plan_cache;
 	if(cacheable)
 	{
-		if(!this->gpu_lr_plan_cache)
-			this->gpu_lr_plan_cache.reset(new Gpu_LR_Plan_Cache<TA, TC, Tdata>());
-		Gpu_LR_Plan_Cache<TA, TC, Tdata> &cache = *this->gpu_lr_plan_cache;
 		const int thread_count = omp_get_max_threads();
-		if(!cache.matches(this->period, thread_count, this->data_ab_name,
+		if(cache.communicator != this->mpi_comm || !cache.matches(this->period, thread_count, this->data_ab_name,
 		                  this->parallel->list_A, this->data_pool))
+        {
 			cache.capture(this->period, thread_count, this->data_ab_name,
 			              this->parallel->list_A, this->data_pool);
+            cache.communicator = this->mpi_comm;
+        }
 	}
 
 
@@ -72,7 +77,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 
 	using Resident = GPU_Data::Resident_Blocks<TA, TAC, Tdata>;
 	using Resident_Map = typename Resident::Block_Map;
-	std::unique_ptr<GPU_Backend::Context> call_context;
+	std::shared_ptr<GPU_Backend::Context> call_context;
 	Resident *resident = nullptr;
 	if(this->gpu_resident_names.empty())
 		call_context.reset(new GPU_Backend::Context(this->mpi_comm));
@@ -83,6 +88,12 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 		resident = this->gpu_resident_blocks.get();
 	}
 	GPU_Backend::Queue &queue = resident ? resident->queue() : call_context->queue();
+    if(!cache.dimension_context || cache.dimension_communicator != this->mpi_comm)
+    {
+        cache.dimension_context = resident ? resident->context_owner() : call_context;
+        cache.dimension_communicator = this->mpi_comm;
+    }
+    const auto &context_owner = cache.dimension_context;
 	const auto resident_for = [&](Label::ab input_label, int variant, const Matrix_Map &source) -> const Resident_Map*
 	{
 		if(!resident) return nullptr;
@@ -207,8 +218,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a1b1.upload(queue);
 					const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
-					dim_1.upload(queue);
+					dim_0.upload(queue, context_owner);
+					dim_1.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -221,7 +232,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a1b1.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						C0_left,
-						rDs_mul.h_array_1.size(), rDs_tmp_segments_size, queue);
+						rDs_mul.first_packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a
@@ -272,14 +283,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_output.upload(queue);
 					rDs_mul.upload_2nd(queue);
 					rDs_a.upload(queue);
-					dim_2.upload(queue);
+					dim_2.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_2.m.data(), dim_2.n.data(), dim_2.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array, rDs_mul.d_array_2,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
-						rDs_output.h_array.size(), queue);
+						rDs_output.packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -352,8 +363,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a1b0.upload(queue);
 					const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
-					dim_1.upload(queue);
+					dim_0.upload(queue, context_owner);
+					dim_1.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -366,7 +377,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a0b1.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
 						C0_left,
-						rDs_mul.h_array_1.size(), rDs_tmp_segments_size, queue);
+						rDs_mul.first_packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a
@@ -406,14 +417,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_output.upload(queue);
 					rDs_mul.upload_2nd(queue);
 					rDs_a.upload(queue);
-					dim_2.upload(queue);
+					dim_2.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_2.m.data(), dim_2.n.data(), dim_2.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array, rDs_mul.d_array_2,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
-						rDs_output.h_array.size(), queue);
+						rDs_output.packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -496,14 +507,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a1b2.upload(queue);
 					rDs_mul.upload_1st(queue);
 
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array, rDs_a1b2.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a * D_a0b0
@@ -567,8 +578,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a0b0.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = false;
 					GPU_Backend::gemmVbatched2s(
@@ -581,7 +592,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -648,14 +659,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a1b2.upload(queue);
 					rDs_mul.upload_1st(queue);
 
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a1b2.d_array, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a * D_a0b1
@@ -705,8 +716,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a0b1.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = false;
 					GPU_Backend::gemmVbatched2s(
@@ -719,7 +730,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -786,14 +797,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a0b2.upload(queue);
 					rDs_mul.upload_1st(queue);
 
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array, rDs_a0b2.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a * D_a1b0
@@ -843,8 +854,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a1b0.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = false;
 					GPU_Backend::gemmVbatched2s(
@@ -857,7 +868,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -924,14 +935,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a0b2.upload(queue);
 					rDs_mul.upload_1st(queue);
 
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a0b2.d_array, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a * D_a1b1
@@ -981,8 +992,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a1b1.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = false;
 					GPU_Backend::gemmVbatched2s(
@@ -995,7 +1006,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -1078,14 +1089,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b1.upload(queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a2b1.d_array, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a0b0 * D_b
@@ -1149,8 +1160,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_b.upload(queue);
 					rDs_a0b0.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -1163,7 +1174,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -1230,14 +1241,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b0.upload(queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::NoTrans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array, rDs_a2b0.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a0b1 * D_b
@@ -1287,8 +1298,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_b.upload(queue);
 					rDs_a0b1.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -1301,7 +1312,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -1368,14 +1379,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b1.upload(queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a2b1.d_array, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a1b0 * D_b
@@ -1425,8 +1436,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_b.upload(queue);
 					rDs_a1b0.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -1439,7 +1450,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -1506,14 +1517,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b0.upload(queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::NoTrans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array, rDs_a2b0.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a1b1 * D_b
@@ -1563,8 +1574,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_b.upload(queue);
 					rDs_a1b1.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -1577,7 +1588,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -1659,14 +1670,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b2.upload(queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a2b2.d_array, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a0b0 * D_b
@@ -1731,8 +1742,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 					rDs_output.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -1745,7 +1756,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -1811,14 +1822,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b2.upload(queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a2b2.d_array, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a0b1 * D_b
@@ -1868,8 +1879,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 					rDs_output.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -1882,7 +1893,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -1948,14 +1959,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b2.upload(queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a2b2.d_array, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a1b0 * D_b
@@ -2005,8 +2016,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 					rDs_output.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -2019,7 +2030,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -2085,14 +2096,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b2.upload(queue);
 					rDs_mul.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a2b2.d_array, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul.d_array_1,
-						rDs_mul.h_array_1.size(), queue);
+						rDs_mul.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul * D_a1b1 * D_b
@@ -2142,8 +2153,8 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 					rDs_output.upload(queue);
 
-					dim_1.upload(queue);
-					dim_2.upload(queue);
+					dim_1.upload(queue, context_owner);
+					dim_2.upload(queue, context_owner);
 
 					constexpr bool C0_left = true;
 					GPU_Backend::gemmVbatched2s(
@@ -2156,7 +2167,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
 						C0_left,
-						rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+						rDs_output.packs().size(), rDs_tmp_segments_size, queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -2223,14 +2234,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_b.upload(queue);
 					rDs_a1b2.upload(queue);
 					rDs_mul_1.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array, rDs_a1b2.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_1.d_array_1,
-						rDs_mul_1.h_array_1.size(), queue);
+						rDs_mul_1.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_mul2 = D_a2b1 * D_a
@@ -2272,14 +2283,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b1.upload(queue);
 					rDs_mul_2.upload_1st(queue);
-					dim_1.upload(queue);
+					dim_1.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_1.m.data(), dim_1.n.data(), dim_1.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a2b1.d_array, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_1,
-						rDs_mul_2.h_array_1.size(), queue);
+						rDs_mul_2.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul2 * D_mul1
@@ -2313,14 +2324,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_mul_1.upload_2nd(queue);
 					rDs_mul_2.upload_2nd(queue);
 					rDs_output.upload(queue);
-					dim_2.upload(queue);
+					dim_2.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_2.m.data(), dim_2.n.data(), dim_2.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_2, rDs_mul_1.d_array_2,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
-						rDs_output.h_array.size(), queue);
+						rDs_output.packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -2385,14 +2396,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_b.upload(queue);
 					rDs_a0b2.upload(queue);
 					rDs_mul_1.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a0b2.d_array, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_1.d_array_1,
-						rDs_mul_1.h_array_1.size(), queue);
+						rDs_mul_1.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_mul2 = D_a2b0 * D_a
@@ -2434,14 +2445,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b0.upload(queue);
 					rDs_mul_2.upload_1st(queue);
-					dim_1.upload(queue);
+					dim_1.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::NoTrans,
 						dim_1.m.data(), dim_1.n.data(), dim_1.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array, rDs_a2b0.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_1,
-						rDs_mul_2.h_array_1.size(), queue);
+						rDs_mul_2.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul2 * D_mul1
@@ -2475,14 +2486,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_mul_1.upload_2nd(queue);
 					rDs_mul_2.upload_2nd(queue);
 					rDs_output.upload(queue);
-					dim_2.upload(queue);
+					dim_2.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::NoTrans,
 						dim_2.m.data(), dim_2.n.data(), dim_2.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_2, rDs_mul_1.d_array_2,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
-						rDs_output.h_array.size(), queue);
+						rDs_output.packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -2547,14 +2558,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_b.upload(queue);
 					rDs_a0b2.upload(queue);
 					rDs_mul_1.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_b.d_array, rDs_a0b2.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_1.d_array_1,
-						rDs_mul_1.h_array_1.size(), queue);
+						rDs_mul_1.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_mul2 = D_a2b1 * D_a
@@ -2596,14 +2607,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b1.upload(queue);
 					rDs_mul_2.upload_1st(queue);
-					dim_1.upload(queue);
+					dim_1.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_1.m.data(), dim_1.n.data(), dim_1.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a2b1.d_array, rDs_a.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_1,
-						rDs_mul_2.h_array_1.size(), queue);
+						rDs_mul_2.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul2 * D_mul1
@@ -2637,14 +2648,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_mul_1.upload_2nd(queue);
 					rDs_mul_2.upload_2nd(queue);
 					rDs_output.upload(queue);
-					dim_2.upload(queue);
+					dim_2.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::Trans, GPU_Backend::Trans,
 						dim_2.m.data(), dim_2.n.data(), dim_2.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_2, rDs_mul_1.d_array_2,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
-						rDs_output.h_array.size(), queue);
+						rDs_output.packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);
@@ -2709,14 +2720,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_b.upload(queue);
 					rDs_a1b2.upload(queue);
 					rDs_mul_1.upload_1st(queue);
-					dim_0.upload(queue);
+					dim_0.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::Trans,
 						dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a1b2.d_array, rDs_b.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_1.d_array_1,
-						rDs_mul_1.h_array_1.size(), queue);
+						rDs_mul_1.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_mul2 = D_a2b0 * D_a
@@ -2758,14 +2769,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_a.upload(queue);
 					rDs_a2b0.upload(queue);
 					rDs_mul_2.upload_1st(queue);
-					dim_1.upload(queue);
+					dim_1.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::NoTrans,
 						dim_1.m.data(), dim_1.n.data(), dim_1.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_a.d_array, rDs_a2b0.d_array,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_1,
-						rDs_mul_2.h_array_1.size(), queue);
+						rDs_mul_2.first_packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					// D_result = D_mul2 * D_mul1
@@ -2799,14 +2810,14 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 					rDs_mul_1.upload_2nd(queue);
 					rDs_mul_2.upload_2nd(queue);
 					rDs_output.upload(queue);
-					dim_2.upload(queue);
+					dim_2.upload(queue, context_owner);
 
 					GPU_Backend::gemmVbatched(
 						GPU_Backend::NoTrans, GPU_Backend::NoTrans,
 						dim_2.m.data(), dim_2.n.data(), dim_2.k.data(),
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_mul_2.d_array_2, rDs_mul_1.d_array_2,
 						GPU_Backend::Type_to_GPU<Tdata>{1}, rDs_output.d_array,
-						rDs_output.h_array.size(), queue);
+						rDs_output.packs().size(), queue);
 					GPU_Backend::sync(queue);
 
 					rDs_output.download(Ds_result, queue, fac_add_Ds);

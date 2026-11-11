@@ -21,6 +21,7 @@ template<typename TA, typename TAC, typename Tdata_CPU>
 class Tmp
 {
     Thread_Batch<std::size_t> pending;
+    const std::vector<std::size_t> *cached_sizes = nullptr;
   public:
     GPU_Backend::Queue queue_ = nullptr;
     using Tdata_GPU = GPU_Backend::Type_to_GPU<Tdata_CPU>;
@@ -36,21 +37,23 @@ class Tmp
         pending.for_each([&](std::size_t size){totalSize+=size;h_array.push_back(size);});
         pending.release();
     }
+    const std::vector<std::size_t>& element_counts() const { return cached_sizes ? *cached_sizes : h_array; }
+    void bind_layout(const std::vector<std::size_t> &sizes) { cached_sizes = &sizes; }
     std::vector<GPU_Backend::Int> upload(std::size_t memory_limit,GPU_Backend::Queue queue)
     {
         this->queue_=queue;
         prepare_layout();
         const std::size_t limit=std::min(totalSize,memory_limit/sizeof(Tdata_GPU));
-        for(auto size:h_array)
+        for(auto size:element_counts())
             if(size>limit) throw std::length_error("LibRI temporary tensor exceeds segment capacity");
         GPU_Backend::allocate(&d_data,limit, queue);
         GPU_Backend::memset(d_data,0,limit*sizeof(Tdata_GPU),queue);
         std::vector<Tdata_GPU*> host_pointers;
-        host_pointers.reserve(h_array.size());
+        host_pointers.reserve(element_counts().size());
         std::vector<GPU_Backend::Int> segments;
         std::size_t used=0;
         GPU_Backend::Int count=0;
-        for(auto size:h_array)
+        for(auto size:element_counts())
         {
             if(count && size>limit-used) { segments.push_back(count); used=0; count=0; }
             host_pointers.push_back(d_data+used);

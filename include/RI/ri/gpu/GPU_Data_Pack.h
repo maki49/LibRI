@@ -71,8 +71,14 @@ protected:
     void merge_packs() { merge_packs([](const Record&,Pack&){}); }
     void release_local_packs() { for(auto &shard:shards) { shard.values.clear(); shard.storage.release(); } }
 public:
+    using Pack_Map = std::map<TA,std::map<TAC,Pack>>;
+    // Cache owns immutable pair offsets; work objects borrow them only for this call.
+    const Pack_Map& pairs() const { return cached_pairs ? *cached_pairs : ptrList; }
+    void bind_pairs(const Pack_Map &layout) { cached_pairs = &layout; }
     std::size_t totalSize=0;
-    std::map<TA,std::map<TAC,Pack>> ptrList;
+    Pack_Map ptrList;
+private:
+    const Pack_Map *cached_pairs = nullptr;
 };
 
 

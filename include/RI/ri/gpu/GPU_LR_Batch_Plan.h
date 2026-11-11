@@ -18,7 +18,8 @@ namespace RI
 {
 
 // Symbolic layout of the two GEMM stages for one LR contraction label.
-// Offsets and dimensions persist; each call binds them to current C, V, D values.
+// The plan owns immutable host layouts and device dimensions; calls borrow layouts
+// and bind offsets to current C, V, D allocations without copying the batch graph.
 template<typename TA, typename TAC, typename Tdata>
 struct Gpu_LR_Case_Plan
 {
@@ -42,19 +43,18 @@ struct Gpu_LR_Case_Plan
         Pack_Map output_map;
         std::vector<GPU_Data::Pack> output_array;
         std::size_t output_size = 0;
-        std::vector<int> m0;
-        std::vector<int> n0;
-        std::vector<int> k0;
-        std::vector<int> m1;
-        std::vector<int> n1;
-        std::vector<int> k1;
+        Dim_mnk::Layout dimensions0, dimensions1;
     } first, second;
 
     static void save_inputs(Stage &stage, std::initializer_list<Input*> inputs)
     {
         stage.inputs.clear();
+        stage.inputs.reserve(inputs.size());
         for(Input *input : inputs)
-            stage.inputs.push_back(input->save_layout());
+        {
+            stage.inputs.push_back(input->take_layout());
+            input->bind_layout(stage.inputs.back());
+        }
     }
 
     static void load_inputs(const Stage &stage,
@@ -75,30 +75,14 @@ struct Gpu_LR_Case_Plan
 
     static void save_dims(Stage &stage, Dim_mnk &dim0, Dim_mnk *dim1)
     {
-        dim0.m.prepare_layout(); dim0.n.prepare_layout(); dim0.k.prepare_layout();
-        if(dim1) {dim1->m.prepare_layout(); dim1->n.prepare_layout(); dim1->k.prepare_layout();}
-        stage.m0 = dim0.m.shapes;
-        stage.n0 = dim0.n.shapes;
-        stage.k0 = dim0.k.shapes;
-        if(dim1)
-        {
-            stage.m1 = dim1->m.shapes;
-            stage.n1 = dim1->n.shapes;
-            stage.k1 = dim1->k.shapes;
-        }
+        stage.dimensions0 = dim0.save_layout();
+        if(dim1) stage.dimensions1 = dim1->save_layout();
     }
 
     static void load_dims(const Stage &stage, Dim_mnk &dim0, Dim_mnk *dim1)
     {
-        dim0.m.shapes = stage.m0;
-        dim0.n.shapes = stage.n0;
-        dim0.k.shapes = stage.k0;
-        if(dim1)
-        {
-            dim1->m.shapes = stage.m1;
-            dim1->n.shapes = stage.n1;
-            dim1->k.shapes = stage.k1;
-        }
+        dim0.load_layout(stage.dimensions0);
+        if(dim1) dim1->load_layout(stage.dimensions1);
     }
 
     void save_first(std::initializer_list<Input*> inputs, Mul &mul,
@@ -106,12 +90,14 @@ struct Gpu_LR_Case_Plan
     {
         mul.prepare_first(); if(tmp) tmp->prepare_layout();
         save_inputs(first, inputs);
-        first.mul_map = mul.ptrList;
-        first.mul_first = mul.h_array_1;
+        first.mul_map = std::move(mul.ptrList);
+        first.mul_first = std::move(mul.h_array_1);
+        mul.bind_first(first.mul_map, first.mul_first);
         first.mul_size = mul.totalSize;
         if(tmp)
         {
-            first.tmp_array = tmp->h_array;
+            first.tmp_array = std::move(tmp->h_array);
+            tmp->bind_layout(first.tmp_array);
             first.tmp_size = tmp->totalSize;
         }
         save_dims(first, dim0, dim1);
@@ -123,12 +109,11 @@ struct Gpu_LR_Case_Plan
                     Mul &mul, Tmp *tmp, Dim_mnk &dim0, Dim_mnk *dim1) const
     {
         load_inputs(first, inputs, sources);
-        mul.ptrList = first.mul_map;
-        mul.h_array_1 = first.mul_first;
+        mul.bind_first(first.mul_map, first.mul_first);
         mul.totalSize = first.mul_size;
         if(tmp)
         {
-            tmp->h_array = first.tmp_array;
+            tmp->bind_layout(first.tmp_array);
             tmp->totalSize = first.tmp_size;
         }
         load_dims(first, dim0, dim1);
@@ -140,14 +125,17 @@ struct Gpu_LR_Case_Plan
     {
         mul.prepare_second(); output.prepare_layout(); if(tmp) tmp->prepare_layout();
         save_inputs(second, inputs);
-        second.mul_second = mul.h_array_2;
+        second.mul_second = std::move(mul.h_array_2);
+        mul.bind_second(second.mul_second);
         if(tmp)
         {
-            second.tmp_array = tmp->h_array;
+            second.tmp_array = std::move(tmp->h_array);
+            tmp->bind_layout(second.tmp_array);
             second.tmp_size = tmp->totalSize;
         }
-        second.output_map = output.ptrList;
-        second.output_array = output.h_array;
+        second.output_map = std::move(output.ptrList);
+        second.output_array = std::move(output.h_array);
+        output.bind_layout(second.output_map, second.output_array);
         second.output_size = output.totalSize;
         save_dims(second, dim0, dim1);
         second.ready = true;
@@ -159,14 +147,13 @@ struct Gpu_LR_Case_Plan
                      Dim_mnk &dim0, Dim_mnk *dim1) const
     {
         load_inputs(second, inputs, sources);
-        mul.h_array_2 = second.mul_second;
+        mul.bind_second(second.mul_second);
         if(tmp)
         {
-            tmp->h_array = second.tmp_array;
+            tmp->bind_layout(second.tmp_array);
             tmp->totalSize = second.tmp_size;
         }
-        output.ptrList = second.output_map;
-        output.h_array = second.output_array;
+        output.bind_layout(second.output_map, second.output_array);
         output.totalSize = second.output_size;
         load_dims(second, dim0, dim1);
     }
@@ -180,6 +167,11 @@ struct Gpu_LR_Plan_Cache
     using List_Map = std::unordered_map<Label::Aab_Aab, List_A<TA, TAC>>;
     using Shape_Map = std::map<TA, std::map<TAC, Shape_Vector>>;
 
+    // Keep allocation-context lifetime independent of rank-local shape/key changes.
+    // Clearing a batch graph must not conditionally destroy an MPI/GPU context.
+    std::shared_ptr<GPU_Backend::Context> dimension_context;
+    MPI_Comm dimension_communicator = MPI_COMM_NULL;
+    MPI_Comm communicator = MPI_COMM_NULL;
     TC period;
     int threads = 0;
     std::unordered_map<Label::ab, std::string> data_names;

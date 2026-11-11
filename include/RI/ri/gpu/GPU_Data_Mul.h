@@ -21,6 +21,7 @@ class Mul : public Pair_Packs<TA,TAC>
 {
     Thread_Batch<const Pack*> pending_first;
     Thread_Batch<Pack> pending_second;
+    const std::vector<Pack> *cached_first = nullptr, *cached_second = nullptr;
   public:
     GPU_Backend::Queue queue_ = nullptr;
 	using Tdata_GPU = GPU_Backend::Type_to_GPU<Tdata_CPU>;
@@ -49,6 +50,11 @@ class Mul : public Pair_Packs<TA,TAC>
         pending_second.for_each([&](const Pack &p){h_array_2.push_back(p);});
         pending_second.release();
     }
+    const std::vector<Pack>& first_packs() const { return cached_first ? *cached_first : h_array_1; }
+    const std::vector<Pack>& second_packs() const { return cached_second ? *cached_second : h_array_2; }
+    void bind_first(const typename Pair_Packs<TA,TAC>::Pack_Map &map, const std::vector<Pack> &array)
+    { this->bind_pairs(map); cached_first = &array; }
+    void bind_second(const std::vector<Pack> &array) { cached_second = &array; }
 	void upload_1st(GPU_Backend::Queue queue)
 	{
         this->queue_=queue;
@@ -57,10 +63,10 @@ class Mul : public Pair_Packs<TA,TAC>
 		GPU_Backend::memset(
 			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
-		const std::size_t batchCount = this->h_array_1.size();
+		const std::size_t batchCount = first_packs().size();
 		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_[i] = this->d_data + this->h_array_1[i].pos;
+			d_array_[i] = this->d_data + first_packs()[i].pos;
 		GPU_Backend::allocate(&this->d_array_1, batchCount, queue);
 		GPU_Backend::upload(
 			batchCount, d_array_.data(), this->d_array_1, queue);
@@ -68,7 +74,7 @@ class Mul : public Pair_Packs<TA,TAC>
 
 	const Pack &find_2nd(const TA &Aa, const TAC &Ab)
 	{
-		return Global_Func::find(this->ptrList, Aa, Ab);
+		return Global_Func::find(this->pairs(), Aa, Ab);
 	}
 
 	const Pack &insert_2nd(const Pack &pack)
@@ -82,10 +88,10 @@ class Mul : public Pair_Packs<TA,TAC>
 	{
         this->queue_=queue;
         prepare_second();
-		const std::size_t batchCount = this->h_array_2.size();
+		const std::size_t batchCount = second_packs().size();
 		std::vector<Tdata_GPU*> d_array_2_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_2_[i] = this->d_data + this->h_array_2[i].pos;
+			d_array_2_[i] = this->d_data + second_packs()[i].pos;
 		GPU_Backend::allocate(&this->d_array_2, batchCount, queue);
 		GPU_Backend::upload(
 			batchCount, d_array_2_.data(), this->d_array_2, queue);

@@ -69,7 +69,24 @@ void check(const char* scalar)
     RI::GPU_Backend::download(count, dim.m.data(), dimensions.data(), queue);
     RI::GPU_Backend::download(values.size(), input.d_data, values.data(), queue);
     RI::GPU_Backend::sync(queue);
-    const auto input_layout = input.save_layout();
+    const auto input_layout = input.take_layout();
+    input.bind_layout(input_layout);
+    typename RI::GPU_Data::Input<int, Key, T>::Matrix_Map changed_source;
+    for(int k=0;k<keys;++k)
+    {
+        RI::Tensor<T> changed(tensors[k].shape);
+        for(std::size_t j=0;j<changed.data->size();++j) (*changed.data)[j]=T(200*k+j);
+        changed_source[0][{k,{0}}]=std::move(changed);
+    }
+    RI::GPU_Data::Input<int, Key, T> cached_input;
+    cached_input.load_layout(input_layout,changed_source);
+    assert(&cached_input.pairs()==&input_layout.ptr_list);
+    assert(cached_input.packs().data()==input_layout.array.data());
+    assert(cached_input.slot_sizes().data()==input_layout.sizes.data());
+    cached_input.upload(queue);
+    std::vector<T> changed_values(values.size());
+    RI::GPU_Backend::download(changed_values.size(),cached_input.d_data,changed_values.data(),queue);
+    RI::GPU_Backend::sync(queue);
     std::vector<std::size_t> input_slot_begin(input_layout.sizes.size()+1,0);
     for(std::size_t slot=0;slot<input_layout.sizes.size();++slot)
         input_slot_begin[slot+1]=input_slot_begin[slot]+input_layout.sizes[slot];
@@ -80,14 +97,17 @@ void check(const char* scalar)
     {
         const int k = expected[i];
         const Key key{k, {0}};
-        const auto& input_pack = input.ptrList.at(0).at(key);
+        const auto& input_pack = input.pairs().at(0).at(key);
         const auto offset = input_slot_begin.at(input_pack.thread_num) + input_pack.pos;
         assert(in_ptrs[i] == input.d_data + offset);
         assert(mul_ptrs[i] == mul.d_data + mul.ptrList.at(0).at(key).pos);
         assert(out_ptrs[i] == output.d_data + output.ptrList.at(0).at(key).pos);
         assert(dimensions[i] == k + 1);
         for (std::size_t j = 0; j < tensors[k].data->size(); ++j)
+        {
             assert(values[offset + j] == (*tensors[k].data)[j]);
+            assert(changed_values[offset+j]==T(200*k+j));
+        }
         if (used + k + 1 > 8)
         {
             expected_segments.push_back(batch);
@@ -116,12 +136,53 @@ void check(const char* scalar)
               << " entries=" << count << " segments=" << segments.size() << '\n';
 }
 
+// Device dimensions survive the allocating call/context owner and are reused
+// from a new queue without changing their addresses or values.
+void check_dimension_lifetime()
+{
+    auto first_context=std::make_shared<RI::GPU_Backend::Context>(MPI_COMM_WORLD);
+    std::weak_ptr<RI::GPU_Backend::Context> owner=first_context;
+    RI::Dim_mnk::Layout layout;
+    int *first_m=nullptr;
+    {
+        RI::Dim_mnk initial;
+        initial.input(3,4,5); initial.input(7,8,9);
+        layout=initial.save_layout();
+        initial.upload(first_context->queue(),first_context);
+        first_m=initial.m.data();
+        assert(layout.m->shapes==std::vector<int>({3,7}));
+    }
+    first_context.reset();
+    assert(!owner.expired());
+    {
+        auto next_context=std::make_shared<RI::GPU_Backend::Context>(MPI_COMM_WORLD);
+        RI::Dim_mnk restored;
+        restored.load_layout(layout);
+        restored.upload(next_context->queue(),next_context);
+        assert(restored.m.data()==first_m);
+        std::vector<int> m(2),n(2),k(2);
+        auto q=next_context->queue();
+        RI::GPU_Backend::download(2,restored.m.data(),m.data(),q);
+        RI::GPU_Backend::download(2,restored.n.data(),n.data(),q);
+        RI::GPU_Backend::download(2,restored.k.data(),k.data(),q);
+        RI::GPU_Backend::sync(q);
+        assert(m==std::vector<int>({3,7}));
+        assert(n==std::vector<int>({4,8}));
+        assert(k==std::vector<int>({5,9}));
+        layout={};
+        assert(!owner.expired());
+    }
+    assert(owner.expired());
+    std::cout<<"CACHED_DIMENSIONS_PASS\n";
+}
+
 int main(int argc, char** argv)
 {
     int provided = 0;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
     assert(provided >= MPI_THREAD_MULTIPLE);
     assert(RI::MPI_Wrapper::mpi_get_size(MPI_COMM_WORLD) == 1);
+    check_dimension_lifetime();
     check<float>("float");
     check<double>("double");
     check<std::complex<float>>("complex_float");

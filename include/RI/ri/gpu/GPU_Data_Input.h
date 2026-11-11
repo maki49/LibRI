@@ -62,17 +62,25 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
         pending.for_each([&](const Entry *entry){ h_array.push_back(*entry); });
         pending.release(); this->release_local_packs(); layout_ready=true;
     }
-    Layout save_layout()
+
+    // Transfer newly built metadata to the cache; numerical copy tasks stay local.
+    Layout take_layout()
     {
         prepare_layout();
-        return {this->ptrList,h_array,planned_sizes};
+        return {std::move(this->ptrList),std::move(h_array),std::move(planned_sizes)};
     }
+    void bind_layout(const Layout &layout)
+    {
+        cached_layout = &layout;
+        this->bind_pairs(layout.ptr_list);
+        layout_ready = true;
+    }
+    const std::vector<Pack>& packs() const { return cached_layout ? cached_layout->array : h_array; }
+    const std::vector<std::size_t>& slot_sizes() const { return cached_layout ? cached_layout->sizes : planned_sizes; }
 
 	void load_layout(const Layout &layout, const Matrix_Map &source)
 	{
-		this->ptrList = layout.ptr_list;
-		this->h_array = layout.array;
-		this->planned_sizes = layout.sizes;
+        bind_layout(layout);
 		this->h_data.resize(layout.sizes.size());
 		this->copy_tasks.clear();
 		this->copy_tasks.resize(layout.sizes.size());
@@ -112,7 +120,7 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 		for(int tid=0; tid<static_cast<int>(this->h_data.size()); ++tid)
 		{
 			std::vector<Tdata_GPU> &buffer = this->h_data[tid];
-			buffer.resize(this->planned_sizes[tid]);
+			buffer.resize(slot_sizes()[tid]);
 			for(const Copy_Task &task : this->copy_tasks[tid])
 				copy_data_impl(buffer.data() + task.pos, *task.tensor, Same_data_layout());
 		}
@@ -137,16 +145,16 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 		{
 			// Resolve symbolic (thread, offset) locations to geometry-fixed device blocks.
 			std::vector<std::unordered_map<std::size_t, Tdata_GPU*>> pointers(this->h_data.size());
-			for(const auto &row : this->ptrList)
+			for(const auto &row : this->pairs())
 				for(const auto &block : row.second)
 				{
 					const Pack &pack = block.second;
 					pointers.at(pack.thread_num)[pack.pos] = this->resident_blocks->at(row.first).at(block.first);
 				}
-			std::vector<Tdata_GPU*> batch_pointers(this->h_array.size());
-			for(std::size_t i = 0; i < this->h_array.size(); ++i)
+			std::vector<Tdata_GPU*> batch_pointers(this->packs().size());
+			for(std::size_t i = 0; i < this->packs().size(); ++i)
 			{
-				const Pack &pack = this->h_array[i];
+				const Pack &pack = this->packs()[i];
 				batch_pointers[i] = pointers.at(pack.thread_num).at(pack.pos);
 			}
 			GPU_Backend::allocate(&this->d_array, batch_pointers.size(), queue);
@@ -163,10 +171,10 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 				this->h_data[i].size(), this->h_data[i].data(),
 				this->d_data+h_data_begin[i], queue);
 
-		const std::size_t batchCount = this->h_array.size();
+		const std::size_t batchCount = this->packs().size();
 		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for(std::size_t i=0; i<batchCount; ++i)
-			d_array_[i] = this->d_data + this->h_array[i].pos + h_data_begin[this->h_array[i].thread_num];
+			d_array_[i] = this->d_data + this->packs()[i].pos + h_data_begin[this->packs()[i].thread_num];
 		GPU_Backend::allocate(&this->d_array, batchCount, queue);
 		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
 	}
@@ -200,6 +208,7 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 	std::vector<std::size_t> planned_sizes;
 	std::vector<std::vector<Copy_Task>> copy_tasks;
 	const Block_Map *resident_blocks = nullptr;
+    const Layout *cached_layout = nullptr;
 
   public:
 	std::vector<std::vector<Tdata_GPU>> h_data;		// 存储数据（CPU）

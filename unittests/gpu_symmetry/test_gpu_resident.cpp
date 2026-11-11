@@ -20,15 +20,20 @@ std::vector<Input> inputs(Label label)
 }
 
 template <typename T>
-void set_input(Lri<T>& lri, Input input, int version, T imaginary)
+void set_input(Lri<T>& lri, Input input, int version, T imaginary,
+               std::size_t extent=2, bool omit_first=false)
 {
     const bool coefficient = input == Input::a || input == Input::b;
-    const RI::Shape_Vector shape = coefficient ? RI::Shape_Vector{2, 2, 2} : RI::Shape_Vector{2, 2};
+    const RI::Shape_Vector shape = coefficient ? RI::Shape_Vector{extent, extent, extent}
+                                             : RI::Shape_Vector{extent, extent};
     Tensors<T> tensors;
     for (int left = 0; left < 2; ++left)
         for (int right = 0; right < 2; ++right)
             for (int cell = 0; cell < 3; ++cell)
+            {
+                if(omit_first && left==0 && right==0 && cell==0) continue;
                 tensors[left][{right, {cell}}] = make_tensor(shape, left, right, cell, version, imaginary);
+            }
     lri.set_tensors_map2(tensors, {input});
 }
 
@@ -68,6 +73,19 @@ void check_resident(T imaginary, bool gpu)
         {
             auto lri = make_lri(label, resident, imaginary);
             verify(lri, label, gpu, "minimal inputs " + RI::Label_Tools::get_name(label));
+        }
+
+    // A warmed device-dimension cache must rebuild after shape or screening-key changes.
+    for(auto cached_label : {Label::a0b0_a1b1,Label::a0b0_a1b2,Label::a0b0_a2b1,Label::a0b0_a2b2})
+        for(bool resident : {false,true})
+        {
+            auto changed=make_lri(cached_label,resident,imaginary);
+            verify(changed,cached_label,gpu,"warm layout before shape change");
+            for(auto input : inputs(cached_label)) set_input(changed,input,7,imaginary,3);
+            verify(changed,cached_label,gpu,"rebuild dimensions after shape change");
+            set_input(changed,Input::a0b0,9,imaginary,3,true);
+            verify(changed,cached_label,gpu,"rebuild layout after block removal");
+            verify(changed,cached_label,gpu,"reuse rebuilt layout");
         }
 
     const auto label = Label::a0b0_a1b1;

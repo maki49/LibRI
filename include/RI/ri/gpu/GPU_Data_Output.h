@@ -25,6 +25,7 @@ template<typename TA, typename TAC, typename Tdata_CPU>
 class Output : public Pair_Packs<TA,TAC>
 {
     Thread_Batch<const Pack*> pending;
+    const std::vector<Pack> *cached_array = nullptr;
   public:
     GPU_Backend::Queue queue_ = nullptr;
 	using Tdata_GPU = GPU_Backend::Type_to_GPU<Tdata_CPU>;
@@ -51,6 +52,9 @@ class Output : public Pair_Packs<TA,TAC>
         pending.for_each([&](const Pack *p){h_array.push_back(*p);});
         pending.release(); this->release_local_packs();
     }
+    const std::vector<Pack>& packs() const { return cached_array ? *cached_array : h_array; }
+    void bind_layout(const typename Pair_Packs<TA,TAC>::Pack_Map &map, const std::vector<Pack> &array)
+    { this->bind_pairs(map); cached_array = &array; }
 	void upload(GPU_Backend::Queue queue)
 	{
         this->queue_=queue;
@@ -59,10 +63,10 @@ class Output : public Pair_Packs<TA,TAC>
 		GPU_Backend::memset(
 			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
-		const std::size_t batchCount = this->h_array.size();
+		const std::size_t batchCount = packs().size();
 		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_[i] = this->d_data + this->h_array[i].pos;
+			d_array_[i] = this->d_data + packs()[i].pos;
 		GPU_Backend::allocate(&this->d_array, batchCount, queue);
 		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
 	}
@@ -76,7 +80,7 @@ class Output : public Pair_Packs<TA,TAC>
 		GPU_Backend::download(
 			this->totalSize, this->d_data, h_data.data(), queue);
 		GPU_Backend::sync(queue);
-		for(const auto &ptrList_A : this->ptrList)
+		for(const auto &ptrList_A : this->pairs())
 		{
 			for(const auto &ptrList_B : ptrList_A.second)
 			{
