@@ -164,13 +164,15 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
         this->queue_=queue;
         finish_deferred_copies();
         // Bind each unique block once; all repeated GEMM references use dense IDs.
-        std::vector<Tdata_GPU*> block_pointers(blocks().size());
+        // Pointer entries are constructed with their final addresses, without a null pass.
+        std::vector<Tdata_GPU*> block_pointers;
+        block_pointers.reserve(blocks().size());
         if(this->resident_blocks)
         {
             for(std::size_t id=0;id<blocks().size();++id)
             {
                 const Block &block=blocks()[id];
-                block_pointers[id]=resident_blocks->at(block.atom).at(block.partner);
+                block_pointers.push_back(resident_blocks->at(block.atom).at(block.partner));
             }
         }
         else
@@ -180,12 +182,13 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
             for(std::size_t id=0;id<blocks().size();++id)
             {
                 const Block &block=blocks()[id];
-                block_pointers[id]=d_data+slot_begin[block.owner]+block.offset;
+                block_pointers.push_back(d_data+slot_begin[block.owner]+block.offset);
             }
         }
-        upload_pointers.resize(block_ids().size());
+        upload_pointers.clear();
+        upload_pointers.reserve(block_ids().size());
         for(std::size_t i=0;i<block_ids().size();++i)
-            upload_pointers[i]=block_pointers[block_ids()[i]];
+            upload_pointers.push_back(block_pointers[block_ids()[i]]);
         GPU_Backend::allocate(&d_array,upload_pointers.size(),queue);
         GPU_Backend::upload(upload_pointers.size(),upload_pointers.data(),d_array,queue);
 	}

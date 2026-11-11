@@ -14,6 +14,7 @@
 #include <cstring>
 #include <type_traits>
 #include <utility>
+#include <memory>
 
 namespace RI
 {
@@ -64,9 +65,10 @@ class Output : public Pair_Packs<TA,TAC>
 			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
 		const std::size_t batchCount = offsets().size();
-		upload_pointers.resize(batchCount);							// 记录每个batch的 d_data 指针（CPU）
+		upload_pointers.clear();
+		upload_pointers.reserve(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			upload_pointers[i] = this->d_data + offsets()[i];
+			upload_pointers.push_back(this->d_data + offsets()[i]);
 		GPU_Backend::allocate(&this->d_array, batchCount, queue);
 		GPU_Backend::upload(batchCount, upload_pointers.data(), this->d_array, queue);
 	}
@@ -76,9 +78,12 @@ class Output : public Pair_Packs<TA,TAC>
 		GPU_Backend::Queue queue,
 		const Tdata_CPU fac) const
 	{
-		std::vector<Tdata_GPU> h_data(this->totalSize);
+		// The download overwrites every element before the synchronization/readback.
+		// Arithmetic types need no zero pass; class types retain default construction.
+		std::unique_ptr<Tdata_GPU[]> h_data(
+			this->totalSize ? new Tdata_GPU[this->totalSize] : nullptr);
 		GPU_Backend::download(
-			this->totalSize, this->d_data, h_data.data(), queue);
+			this->totalSize, this->d_data, h_data.get(), queue);
 		GPU_Backend::sync(queue);
 		for(const auto &ptrList_A : this->pairs())
 		{
@@ -86,7 +91,7 @@ class Output : public Pair_Packs<TA,TAC>
 			{
 				const Pack &pack = ptrList_B.second;
 				Tensor<Tdata_CPU> D_output(pack.shape);
-				download_data_impl(D_output, h_data, pack, Same_data_layout());
+				download_data_impl(D_output, h_data.get(), pack, Same_data_layout());
 
 				Tensor<Tdata_CPU> &D_result = Ds_result[ptrList_A.first][ptrList_B.first];
 				LRI_Cal_Aux::add_Ds(std::move(D_output), D_result, fac);
@@ -109,24 +114,24 @@ class Output : public Pair_Packs<TA,TAC>
   private:
 	static void download_data_impl(
 		Tensor<Tdata_CPU> &D_output,
-		const std::vector<Tdata_GPU> &h_data,
+		const Tdata_GPU *h_data,
 		const Pack &pack,
 		std::true_type)
 	{
 		std::memcpy(
 			D_output.ptr(),
-			h_data.data()+pack.pos,
+			h_data+pack.pos,
 			pack.shape.get_shape_all()*sizeof(Tdata_CPU));
 	}
 
 	static void download_data_impl(
 		Tensor<Tdata_CPU> &D_output,
-		const std::vector<Tdata_GPU> &h_data,
+		const Tdata_GPU *h_data,
 		const Pack &pack,
 		std::false_type)
 	{
 		const std::size_t size = pack.shape.get_shape_all();
-		const auto ptr_src = h_data.begin()+pack.pos;
+		const auto ptr_src = h_data+pack.pos;
 		const auto ptr_dest = D_output.ptr();
 		for(std::size_t i=0; i<size; ++i)
 			ptr_dest[i] = GPU_Backend::data_to_CPU(ptr_src[i]);
