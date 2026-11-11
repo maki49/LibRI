@@ -35,13 +35,13 @@ struct Gpu_LR_Case_Plan
         bool ready = false;
         std::vector<typename Input::Layout> inputs;
         Pack_Map mul_map;
-        std::vector<GPU_Data::Pack> mul_first;
-        std::vector<GPU_Data::Pack> mul_second;
+        std::vector<std::size_t> mul_first_offsets;
+        std::vector<std::size_t> mul_second_offsets;
         std::size_t mul_size = 0;
         std::vector<std::size_t> tmp_array;
         std::size_t tmp_size = 0;
         Pack_Map output_map;
-        std::vector<GPU_Data::Pack> output_array;
+        std::vector<std::size_t> output_offsets;
         std::size_t output_size = 0;
         Dim_mnk::Layout dimensions0, dimensions1;
     } first, second;
@@ -91,8 +91,8 @@ struct Gpu_LR_Case_Plan
         mul.prepare_first(); if(tmp) tmp->prepare_layout();
         save_inputs(first, inputs);
         first.mul_map = std::move(mul.ptrList);
-        first.mul_first = std::move(mul.h_array_1);
-        mul.bind_first(first.mul_map, first.mul_first);
+        first.mul_first_offsets = std::move(mul.first_batch_offsets);
+        mul.bind_first(first.mul_map, first.mul_first_offsets);
         first.mul_size = mul.totalSize;
         if(tmp)
         {
@@ -109,7 +109,7 @@ struct Gpu_LR_Case_Plan
                     Mul &mul, Tmp *tmp, Dim_mnk &dim0, Dim_mnk *dim1) const
     {
         load_inputs(first, inputs, sources);
-        mul.bind_first(first.mul_map, first.mul_first);
+        mul.bind_first(first.mul_map, first.mul_first_offsets);
         mul.totalSize = first.mul_size;
         if(tmp)
         {
@@ -125,8 +125,8 @@ struct Gpu_LR_Case_Plan
     {
         mul.prepare_second(); output.prepare_layout(); if(tmp) tmp->prepare_layout();
         save_inputs(second, inputs);
-        second.mul_second = std::move(mul.h_array_2);
-        mul.bind_second(second.mul_second);
+        second.mul_second_offsets = std::move(mul.second_batch_offsets);
+        mul.bind_second(second.mul_second_offsets);
         if(tmp)
         {
             second.tmp_array = std::move(tmp->h_array);
@@ -134,8 +134,8 @@ struct Gpu_LR_Case_Plan
             second.tmp_size = tmp->totalSize;
         }
         second.output_map = std::move(output.ptrList);
-        second.output_array = std::move(output.h_array);
-        output.bind_layout(second.output_map, second.output_array);
+        second.output_offsets = std::move(output.batch_offsets);
+        output.bind_layout(second.output_map, second.output_offsets);
         second.output_size = output.totalSize;
         save_dims(second, dim0, dim1);
         second.ready = true;
@@ -147,13 +147,13 @@ struct Gpu_LR_Case_Plan
                      Dim_mnk &dim0, Dim_mnk *dim1) const
     {
         load_inputs(second, inputs, sources);
-        mul.bind_second(second.mul_second);
+        mul.bind_second(second.mul_second_offsets);
         if(tmp)
         {
             tmp->bind_layout(second.tmp_array);
             tmp->totalSize = second.tmp_size;
         }
-        output.bind_layout(second.output_map, second.output_array);
+        output.bind_layout(second.output_map, second.output_offsets);
         output.totalSize = second.output_size;
         load_dims(second, dim0, dim1);
     }

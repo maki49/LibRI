@@ -25,7 +25,7 @@ template<typename TA, typename TAC, typename Tdata_CPU>
 class Output : public Pair_Packs<TA,TAC>
 {
     Thread_Batch<const Pack*> pending;
-    const std::vector<Pack> *cached_array = nullptr;
+    const std::vector<std::size_t> *cached_array = nullptr;
   public:
     GPU_Backend::Queue queue_ = nullptr;
 	using Tdata_GPU = GPU_Backend::Type_to_GPU<Tdata_CPU>;
@@ -49,11 +49,11 @@ class Output : public Pair_Packs<TA,TAC>
     {
         if(!pending.size()) return;
         this->merge_packs();
-        pending.for_each([&](const Pack *p){h_array.push_back(*p);});
+        pending.for_each([&](const Pack *p){batch_offsets.push_back(p->pos);});
         pending.release(); this->release_local_packs();
     }
-    const std::vector<Pack>& packs() const { return cached_array ? *cached_array : h_array; }
-    void bind_layout(const typename Pair_Packs<TA,TAC>::Pack_Map &map, const std::vector<Pack> &array)
+    const std::vector<std::size_t>& offsets() const { return cached_array ? *cached_array : batch_offsets; }
+    void bind_layout(const typename Pair_Packs<TA,TAC>::Pack_Map &map, const std::vector<std::size_t> &array)
     { this->bind_pairs(map); cached_array = &array; }
 	void upload(GPU_Backend::Queue queue)
 	{
@@ -63,10 +63,10 @@ class Output : public Pair_Packs<TA,TAC>
 		GPU_Backend::memset(
 			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
-		const std::size_t batchCount = packs().size();
+		const std::size_t batchCount = offsets().size();
 		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_[i] = this->d_data + packs()[i].pos;
+			d_array_[i] = this->d_data + offsets()[i];
 		GPU_Backend::allocate(&this->d_array, batchCount, queue);
 		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
 	}
@@ -128,7 +128,7 @@ class Output : public Pair_Packs<TA,TAC>
 
   public:
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
-	std::vector<Pack> h_array;					// 记录每个batch的Pack
+	std::vector<std::size_t> batch_offsets;					// One element offset per contribution; output shapes stay in the unique-pair map.
 	Tdata_GPU **d_array = nullptr;					// 记录每个batch的 d_data 指针（GPU）
 };
 

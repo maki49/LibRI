@@ -56,8 +56,8 @@ void check(const char* scalar)
     assert(input.ptrList.at(0).size() == keys);
     assert(mul.ptrList.at(0).size() == keys);
     assert(output.ptrList.at(0).size() == keys);
-    assert(input.h_array.size() == count && mul.h_array_1.size() == count);
-    assert(output.h_array.size() == count && tmp.h_array.size() == count);
+    assert(input.h_array.size() == count && mul.first_batch_offsets.size() == count);
+    assert(output.batch_offsets.size() == count && tmp.h_array.size() == count);
 
     std::vector<T*> in_ptrs(count), mul_ptrs(count), out_ptrs(count), tmp_ptrs(count);
     std::vector<int> dimensions(count);
@@ -69,6 +69,15 @@ void check(const char* scalar)
     RI::GPU_Backend::download(count, dim.m.data(), dimensions.data(), queue);
     RI::GPU_Backend::download(values.size(), input.d_data, values.data(), queue);
     RI::GPU_Backend::sync(queue);
+    // Cached contribution sequences own offsets, not pointers into temporary shards.
+    const auto cached_mul_pairs=std::move(mul.ptrList);
+    const auto cached_mul_offsets=std::move(mul.first_batch_offsets);
+    mul.bind_first(cached_mul_pairs,cached_mul_offsets);
+    assert(mul.first_offsets().data()==cached_mul_offsets.data());
+    const auto cached_output_pairs=std::move(output.ptrList);
+    const auto cached_output_offsets=std::move(output.batch_offsets);
+    output.bind_layout(cached_output_pairs,cached_output_offsets);
+    assert(output.offsets().data()==cached_output_offsets.data());
     const auto input_layout = input.take_layout();
     input.bind_layout(input_layout);
     typename RI::GPU_Data::Input<int, Key, T>::Matrix_Map changed_source;
@@ -100,8 +109,8 @@ void check(const char* scalar)
         const auto& input_pack = input.pairs().at(0).at(key);
         const auto offset = input_slot_begin.at(input_pack.thread_num) + input_pack.pos;
         assert(in_ptrs[i] == input.d_data + offset);
-        assert(mul_ptrs[i] == mul.d_data + mul.ptrList.at(0).at(key).pos);
-        assert(out_ptrs[i] == output.d_data + output.ptrList.at(0).at(key).pos);
+        assert(mul_ptrs[i] == mul.d_data + mul.pairs().at(0).at(key).pos);
+        assert(out_ptrs[i] == output.d_data + output.pairs().at(0).at(key).pos);
         assert(dimensions[i] == k + 1);
         for (std::size_t j = 0; j < tensors[k].data->size(); ++j)
         {
@@ -124,7 +133,7 @@ void check(const char* scalar)
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < count; ++i) mul.insert_2nd(mul.find_2nd(0, {i % keys, {0}}));
     mul.upload_2nd(queue);
-    assert(mul.h_array_2.size() == count);
+    assert(mul.second_batch_offsets.size() == count);
     std::map<int, std::map<Key, RI::Tensor<T>>> result;
     output.download(result, queue, T(1));
     assert(result.at(0).size() == keys);
