@@ -42,10 +42,20 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 
 	// Numerical values are deliberately absent: a cached layout is valid only
 	// while the caller's block-key and shape signature is unchanged.
+    // One descriptor per unique input block; contributions store only its index.
+    // Atom keys resolve geometry-resident addresses; slot/offset resolve uploaded values.
+    struct Block
+    {
+        TA atom;
+        TAC partner;
+        std::size_t offset;
+        int owner;
+    };
 	struct Layout
 	{
 		std::map<TA, std::map<TAC, Pack>> ptr_list;
-		std::vector<Pack> array;
+		std::vector<Block> blocks;
+        std::vector<std::size_t> block_ids;
 		std::vector<std::size_t> sizes;
 	};
 
@@ -59,7 +69,17 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
             planned_sizes[owner]+=shared.shape.get_shape_all();
             if(!resident_blocks) copy_tasks[owner].push_back({local.tensor,shared.pos});
         });
-        pending.for_each([&](const Entry *entry){ h_array.push_back(*entry); });
+        std::vector<std::unordered_map<std::size_t,std::size_t>> ids_by_slot(h_data.size());
+        for(const auto &row:this->ptrList) for(const auto &block:row.second)
+        {
+            const Pack &pack=block.second;
+            const std::size_t id=unique_blocks.size();
+            unique_blocks.push_back({row.first,block.first,pack.pos,pack.thread_num});
+            ids_by_slot[pack.thread_num].emplace(pack.pos,id);
+        }
+        pending.for_each([&](const Entry *entry){
+            batch_block_ids.push_back(ids_by_slot[entry->thread_num].at(entry->pos));
+        });
         pending.release(); this->release_local_packs(); layout_ready=true;
     }
 
@@ -67,7 +87,7 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
     Layout take_layout()
     {
         prepare_layout();
-        return {std::move(this->ptrList),std::move(h_array),std::move(planned_sizes)};
+        return {std::move(this->ptrList),std::move(unique_blocks),std::move(batch_block_ids),std::move(planned_sizes)};
     }
     void bind_layout(const Layout &layout)
     {
@@ -75,7 +95,8 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
         this->bind_pairs(layout.ptr_list);
         layout_ready = true;
     }
-    const std::vector<Pack>& packs() const { return cached_layout ? cached_layout->array : h_array; }
+    const std::vector<Block>& blocks() const { return cached_layout ? cached_layout->blocks : unique_blocks; }
+    const std::vector<std::size_t>& block_ids() const { return cached_layout ? cached_layout->block_ids : batch_block_ids; }
     const std::vector<std::size_t>& slot_sizes() const { return cached_layout ? cached_layout->sizes : planned_sizes; }
 
 	void load_layout(const Layout &layout, const Matrix_Map &source)
@@ -141,42 +162,34 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 	{
         this->queue_=queue;
         finish_deferred_copies();
-		if(this->resident_blocks)
-		{
-			// Resolve symbolic (thread, offset) locations to geometry-fixed device blocks.
-			std::vector<std::unordered_map<std::size_t, Tdata_GPU*>> pointers(this->h_data.size());
-			for(const auto &row : this->pairs())
-				for(const auto &block : row.second)
-				{
-					const Pack &pack = block.second;
-					pointers.at(pack.thread_num)[pack.pos] = this->resident_blocks->at(row.first).at(block.first);
-				}
-			std::vector<Tdata_GPU*> batch_pointers(this->packs().size());
-			for(std::size_t i = 0; i < this->packs().size(); ++i)
-			{
-				const Pack &pack = this->packs()[i];
-				batch_pointers[i] = pointers.at(pack.thread_num).at(pack.pos);
-			}
-			GPU_Backend::allocate(&this->d_array, batch_pointers.size(), queue);
-			GPU_Backend::upload(batch_pointers.size(), batch_pointers.data(), this->d_array, queue);
-			return;
-		}
-		std::vector<std::size_t> h_data_begin(this->h_data.size()+1, 0);
-		for(std::size_t i=1; i<h_data_begin.size(); ++i)
-			h_data_begin[i] = h_data_begin[i-1] + this->h_data[i-1].size();
-
-		GPU_Backend::allocate(&this->d_data, h_data_begin.back(), queue);
-		for(std::size_t i=0; i<this->h_data.size(); ++i)
-			GPU_Backend::upload(
-				this->h_data[i].size(), this->h_data[i].data(),
-				this->d_data+h_data_begin[i], queue);
-
-		const std::size_t batchCount = this->packs().size();
-		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
-		for(std::size_t i=0; i<batchCount; ++i)
-			d_array_[i] = this->d_data + this->packs()[i].pos + h_data_begin[this->packs()[i].thread_num];
-		GPU_Backend::allocate(&this->d_array, batchCount, queue);
-		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
+        // Bind each unique block once; all repeated GEMM references use dense IDs.
+        std::vector<Tdata_GPU*> block_pointers(blocks().size());
+        if(this->resident_blocks)
+        {
+            for(std::size_t id=0;id<blocks().size();++id)
+            {
+                const Block &block=blocks()[id];
+                block_pointers[id]=resident_blocks->at(block.atom).at(block.partner);
+            }
+        }
+        else
+        {
+            std::vector<std::size_t> slot_begin(h_data.size()+1,0);
+            for(std::size_t i=0;i<h_data.size();++i) slot_begin[i+1]=slot_begin[i]+h_data[i].size();
+            GPU_Backend::allocate(&d_data,slot_begin.back(),queue);
+            for(std::size_t i=0;i<h_data.size();++i)
+                GPU_Backend::upload(h_data[i].size(),h_data[i].data(),d_data+slot_begin[i],queue);
+            for(std::size_t id=0;id<blocks().size();++id)
+            {
+                const Block &block=blocks()[id];
+                block_pointers[id]=d_data+slot_begin[block.owner]+block.offset;
+            }
+        }
+        std::vector<Tdata_GPU*> batch_pointers(block_ids().size());
+        for(std::size_t i=0;i<block_ids().size();++i)
+            batch_pointers[i]=block_pointers[block_ids()[i]];
+        GPU_Backend::allocate(&d_array,batch_pointers.size(),queue);
+        GPU_Backend::upload(batch_pointers.size(),batch_pointers.data(),d_array,queue);
 	}
 
 	~Input()
@@ -214,7 +227,8 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 	std::vector<std::vector<Tdata_GPU>> h_data;		// 存储数据（CPU）
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
 	Tdata_GPU **d_array = nullptr;					// 记录每个batch的 d_data 指针（GPU）
-	std::vector<Pack> h_array;					// 记录每个batch的Pack
+    std::vector<Block> unique_blocks;
+    std::vector<std::size_t> batch_block_ids;
 };
 
 }

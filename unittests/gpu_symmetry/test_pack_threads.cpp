@@ -56,7 +56,7 @@ void check(const char* scalar)
     assert(input.ptrList.at(0).size() == keys);
     assert(mul.ptrList.at(0).size() == keys);
     assert(output.ptrList.at(0).size() == keys);
-    assert(input.h_array.size() == count && mul.first_batch_offsets.size() == count);
+    assert(input.batch_block_ids.size() == count && mul.first_batch_offsets.size() == count);
     assert(output.batch_offsets.size() == count && tmp.h_array.size() == count);
 
     std::vector<T*> in_ptrs(count), mul_ptrs(count), out_ptrs(count), tmp_ptrs(count);
@@ -90,7 +90,7 @@ void check(const char* scalar)
     RI::GPU_Data::Input<int, Key, T> cached_input;
     cached_input.load_layout(input_layout,changed_source);
     assert(&cached_input.pairs()==&input_layout.ptr_list);
-    assert(cached_input.packs().data()==input_layout.array.data());
+    assert(cached_input.block_ids().data()==input_layout.block_ids.data());
     assert(cached_input.slot_sizes().data()==input_layout.sizes.data());
     cached_input.upload(queue);
     std::vector<T> changed_values(values.size());
@@ -139,6 +139,33 @@ void check(const char* scalar)
     assert(result.at(0).size() == keys);
     for (const auto& block : result.at(0))
         for (const auto value : *block.second.data) assert(value == T(0));
+    // The same cached IDs must bind to the current resident addresses, not the
+    // addresses from the call that built the layout. Neither resident input owns values.
+    for(auto *source_input:{&input,&cached_input})
+    {
+        typename RI::GPU_Data::Input<int,Key,T>::Block_Map resident_addresses;
+        for(const auto &row:input_layout.ptr_list) for(const auto &entry:row.second)
+        {
+            const auto &pack=entry.second;
+            resident_addresses[row.first][entry.first]=source_input->d_data+
+                input_slot_begin[pack.thread_num]+pack.pos;
+        }
+        RI::GPU_Data::Input<int,Key,T> resident_input;
+        resident_input.bind_resident_blocks(&resident_addresses);
+        resident_input.load_layout(input_layout,changed_source);
+        resident_input.upload(queue);
+        std::vector<T*> resident_pointers(count);
+        RI::GPU_Backend::download(count,resident_input.d_array,resident_pointers.data(),queue);
+        RI::GPU_Backend::sync(queue);
+        assert(resident_input.d_data==nullptr);
+        assert(resident_input.blocks().size()==keys);
+        for(int i=0;i<count;++i)
+        {
+            const auto &pack=input_layout.ptr_list.at(0).at({expected[i],{0}});
+            assert(resident_pointers[i]==source_input->d_data+
+                input_slot_begin[pack.thread_num]+pack.pos);
+        }
+    }
     RI::GPU_Data::Tmp<int, Key, T> empty;
     assert(empty.upload(8 * sizeof(T), queue).empty());
     std::cout << "PACK_THREADS_PASS " << scalar << " threads=" << omp_get_max_threads()
