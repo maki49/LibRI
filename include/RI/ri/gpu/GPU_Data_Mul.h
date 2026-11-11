@@ -65,12 +65,12 @@ class Mul : public Pair_Packs<TA,TAC>
 			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
 		const std::size_t batchCount = first_offsets().size();
-		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
+		first_upload_pointers.resize(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_[i] = this->d_data + first_offsets()[i];
+			first_upload_pointers[i] = this->d_data + first_offsets()[i];
 		GPU_Backend::allocate(&this->d_array_1, batchCount, queue);
 		GPU_Backend::upload(
-			batchCount, d_array_.data(), this->d_array_1, queue);
+			batchCount, first_upload_pointers.data(), this->d_array_1, queue);
 	}
 
 	const Pack &find_2nd(const TA &Aa, const TAC &Ab)
@@ -90,14 +90,22 @@ class Mul : public Pair_Packs<TA,TAC>
         this->queue_=queue;
         prepare_second();
 		const std::size_t batchCount = second_offsets().size();
-		std::vector<Tdata_GPU*> d_array_2_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
+		second_upload_pointers.resize(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_2_[i] = this->d_data + second_offsets()[i];
+			second_upload_pointers[i] = this->d_data + second_offsets()[i];
 		GPU_Backend::allocate(&this->d_array_2, batchCount, queue);
 		GPU_Backend::upload(
-			batchCount, d_array_2_.data(), this->d_array_2, queue);
+			batchCount, second_upload_pointers.data(), this->d_array_2, queue);
 	}
 
+    // Preserve the pair map for the second GEMM's find_2nd(); only upload work is dead.
+    void release_completed_uploads()
+    {
+        std::vector<Tdata_GPU*>().swap(first_upload_pointers);
+        std::vector<Tdata_GPU*>().swap(second_upload_pointers);
+        if(!cached_first) std::vector<std::size_t>().swap(first_batch_offsets);
+        if(!cached_second) std::vector<std::size_t>().swap(second_batch_offsets);
+    }
 	~Mul()
 	{
 		GPU_Backend::free(this->d_data, this->queue_);
@@ -105,6 +113,7 @@ class Mul : public Pair_Packs<TA,TAC>
 		GPU_Backend::free(this->d_array_2, this->queue_);
 	}
 
+    std::vector<Tdata_GPU*> first_upload_pointers, second_upload_pointers;
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
 	std::vector<std::size_t> first_batch_offsets;				// One element offset per GEMM contribution; shapes stay in the unique-pair map.
 	std::vector<std::size_t> second_batch_offsets;				// One element offset per GEMM contribution; shapes stay in the unique-pair map.

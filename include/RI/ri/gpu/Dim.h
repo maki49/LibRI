@@ -99,6 +99,8 @@ class Dim
         GPU_Backend::allocate(&d_m, shapes.size()+1, queue);
         GPU_Backend::upload(shapes.size(), shapes.data(), d_m, queue);
     }
+    void release_completed_uploads()
+    { if(!cached_layout) std::vector<int>().swap(shapes); }
     ~Dim() { if(!cached_layout) GPU_Backend::free(d_m, queue_); }
     int* data() const { return d_m; }
 
@@ -145,6 +147,8 @@ class Dim_mnk
 		k.input(std::get<0>(shape_k), std::get<1>(shape_k));
 	}
 
+    void release_completed_uploads()
+    { m.release_completed_uploads(); n.release_completed_uploads(); k.release_completed_uploads(); }
     struct Layout
     {
         std::shared_ptr<Dim::Layout> m, n, k;

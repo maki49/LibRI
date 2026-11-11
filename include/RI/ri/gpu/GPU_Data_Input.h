@@ -15,6 +15,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <stdexcept>
+#include <memory>
 
 namespace RI
 {
@@ -64,12 +65,12 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
     {
         if(layout_ready) return;
         this->merge_packs([&](const Entry &local,Pack &shared) {
-            const std::size_t owner=next_owner++ % h_data.size();
+            const std::size_t owner=next_owner++ % planned_sizes.size();
             shared.thread_num=owner; shared.pos=planned_sizes[owner];
             planned_sizes[owner]+=shared.shape.get_shape_all();
             if(!resident_blocks) copy_tasks[owner].push_back({local.tensor,shared.pos});
         });
-        std::vector<std::unordered_map<std::size_t,std::size_t>> ids_by_slot(h_data.size());
+        std::vector<std::unordered_map<std::size_t,std::size_t>> ids_by_slot(planned_sizes.size());
         for(const auto &row:this->ptrList) for(const auto &block:row.second)
         {
             const Pack &pack=block.second;
@@ -102,7 +103,6 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 	void load_layout(const Layout &layout, const Matrix_Map &source)
 	{
         bind_layout(layout);
-		this->h_data.resize(layout.sizes.size());
 		this->copy_tasks.clear();
 		this->copy_tasks.resize(layout.sizes.size());
 		this->layout_ready = true;
@@ -118,9 +118,8 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 
 	Input()
 	{
-		this->h_data.resize(omp_get_max_threads());
-		this->planned_sizes.assign(h_data.size(),0);
-        this->copy_tasks.resize(h_data.size());
+        this->planned_sizes.assign(omp_get_max_threads(),0);
+        this->copy_tasks.resize(planned_sizes.size());
 	}
 
     // All registrations are deferred; the API remains usable by existing callers.
@@ -137,14 +136,16 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
 			this->copy_tasks.clear();
 			return;
 		}
-		#pragma omp parallel for schedule(static)
-		for(int tid=0; tid<static_cast<int>(this->h_data.size()); ++tid)
-		{
-			std::vector<Tdata_GPU> &buffer = this->h_data[tid];
-			buffer.resize(slot_sizes()[tid]);
-			for(const Copy_Task &task : this->copy_tasks[tid])
-				copy_data_impl(buffer.data() + task.pos, *task.tensor, Same_data_layout());
-		}
+        slot_begin.assign(slot_sizes().size()+1,0);
+        for(std::size_t i=0;i<slot_sizes().size();++i)
+            slot_begin[i+1]=slot_begin[i]+slot_sizes()[i];
+        // Default initialization avoids a serial zero pass for arithmetic inputs.
+        // Class types still run their constructors; every element is copied before upload.
+        host_values.reset(slot_begin.back() ? new Tdata_GPU[slot_begin.back()] : nullptr);
+        #pragma omp parallel for schedule(static)
+        for(int owner=0;owner<static_cast<int>(slot_sizes().size());++owner)
+            for(const Copy_Task &task:copy_tasks[owner])
+                copy_data_impl(host_values.get()+slot_begin[owner]+task.pos,*task.tensor,Same_data_layout());
 		this->copy_tasks.clear();
 	}
 
@@ -174,24 +175,33 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
         }
         else
         {
-            std::vector<std::size_t> slot_begin(h_data.size()+1,0);
-            for(std::size_t i=0;i<h_data.size();++i) slot_begin[i+1]=slot_begin[i]+h_data[i].size();
             GPU_Backend::allocate(&d_data,slot_begin.back(),queue);
-            for(std::size_t i=0;i<h_data.size();++i)
-                GPU_Backend::upload(h_data[i].size(),h_data[i].data(),d_data+slot_begin[i],queue);
+            GPU_Backend::upload(slot_begin.back(),host_values.get(),d_data,queue);
             for(std::size_t id=0;id<blocks().size();++id)
             {
                 const Block &block=blocks()[id];
                 block_pointers[id]=d_data+slot_begin[block.owner]+block.offset;
             }
         }
-        std::vector<Tdata_GPU*> batch_pointers(block_ids().size());
+        upload_pointers.resize(block_ids().size());
         for(std::size_t i=0;i<block_ids().size();++i)
-            batch_pointers[i]=block_pointers[block_ids()[i]];
-        GPU_Backend::allocate(&d_array,batch_pointers.size(),queue);
-        GPU_Backend::upload(batch_pointers.size(),batch_pointers.data(),d_array,queue);
+            upload_pointers[i]=block_pointers[block_ids()[i]];
+        GPU_Backend::allocate(&d_array,upload_pointers.size(),queue);
+        GPU_Backend::upload(upload_pointers.size(),upload_pointers.data(),d_array,queue);
 	}
 
+    // Caller has synchronized the consuming queue. Cached layouts remain owned by the plan.
+    void release_completed_uploads()
+    {
+        host_values.reset();
+        std::vector<Tdata_GPU*>().swap(upload_pointers);
+        std::vector<std::size_t>().swap(slot_begin);
+        if(!cached_layout)
+        {
+            std::vector<std::size_t>().swap(batch_block_ids);
+            std::vector<Block>().swap(unique_blocks);
+        }
+    }
 	~Input()
 	{
 		GPU_Backend::free(this->d_data, this->queue_);
@@ -224,7 +234,9 @@ class Input : public Pair_Packs<TA,TAC,Input_Pack<Tdata_CPU>>
     const Layout *cached_layout = nullptr;
 
   public:
-	std::vector<std::vector<Tdata_GPU>> h_data;		// 存储数据（CPU）
+    std::unique_ptr<Tdata_GPU[]> host_values;
+    std::vector<Tdata_GPU*> upload_pointers;
+    std::vector<std::size_t> slot_begin;
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
 	Tdata_GPU **d_array = nullptr;					// 记录每个batch的 d_data 指针（GPU）
     std::vector<Block> unique_blocks;

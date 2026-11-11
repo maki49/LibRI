@@ -166,6 +166,19 @@ void check(const char* scalar)
                 input_slot_begin[pack.thread_num]+pack.pos);
         }
     }
+    // Releasing completed host transfers must not invalidate cache aliases,
+    // device inputs, Mul pair lookups, or Output block reconstruction.
+    RI::GPU_Data::release_completed_uploads(input,cached_input,mul,output,tmp,dim);
+    assert(!input.host_values && input.upload_pointers.empty());
+    assert(cached_input.block_ids().data()==input_layout.block_ids.data());
+    assert(mul.first_offsets().data()==cached_mul_offsets.data());
+    assert(output.offsets().data()==cached_output_offsets.data());
+    assert(mul.find_2nd(0,{0,{0}}).exist);
+    std::map<int,std::map<Key,RI::Tensor<T>>> after_release;
+    output.download(after_release,queue,T(1));
+    assert(after_release.at(0).size()==keys);
+    for(const auto &block:after_release.at(0))
+        for(const auto value:*block.second.data) assert(value==T(0));
     RI::GPU_Data::Tmp<int, Key, T> empty;
     assert(empty.upload(8 * sizeof(T), queue).empty());
     std::cout << "PACK_THREADS_PASS " << scalar << " threads=" << omp_get_max_threads()

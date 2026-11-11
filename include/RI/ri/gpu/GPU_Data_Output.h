@@ -64,11 +64,11 @@ class Output : public Pair_Packs<TA,TAC>
 			this->d_data, 0, this->totalSize * sizeof(Tdata_GPU), queue);
 
 		const std::size_t batchCount = offsets().size();
-		std::vector<Tdata_GPU*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
+		upload_pointers.resize(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
-			d_array_[i] = this->d_data + offsets()[i];
+			upload_pointers[i] = this->d_data + offsets()[i];
 		GPU_Backend::allocate(&this->d_array, batchCount, queue);
-		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
+		GPU_Backend::upload(batchCount, upload_pointers.data(), this->d_array, queue);
 	}
 
 	void download(
@@ -94,6 +94,12 @@ class Output : public Pair_Packs<TA,TAC>
 		}
 	}
 
+    // Output shapes and offsets in pairs() must survive until download restores AO blocks.
+    void release_completed_uploads()
+    {
+        std::vector<Tdata_GPU*>().swap(upload_pointers);
+        if(!cached_array) std::vector<std::size_t>().swap(batch_offsets);
+    }
 	~Output()
 	{
 		GPU_Backend::free(this->d_data, this->queue_);
@@ -127,6 +133,7 @@ class Output : public Pair_Packs<TA,TAC>
 	}
 
   public:
+    std::vector<Tdata_GPU*> upload_pointers;
 	Tdata_GPU *d_data = nullptr;					// 存储数据（GPU）
 	std::vector<std::size_t> batch_offsets;					// One element offset per contribution; output shapes stay in the unique-pair map.
 	Tdata_GPU **d_array = nullptr;					// 记录每个batch的 d_data 指针（GPU）

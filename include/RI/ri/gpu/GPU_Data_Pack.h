@@ -18,6 +18,12 @@ namespace RI
 namespace GPU_Data
 {
 
+// Release host upload sources only after the caller's existing queue sync.
+// This adds no synchronization and leaves cached immutable layouts untouched.
+template<typename... Workspaces>
+void release_completed_uploads(Workspaces&... workspaces)
+{ (workspaces.release_completed_uploads(),...); }
+
 struct Pack
 {
 	bool exist = false;
