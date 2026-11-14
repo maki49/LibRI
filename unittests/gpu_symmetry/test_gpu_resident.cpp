@@ -45,8 +45,10 @@ Lri<T> make_lri(Label label, bool resident, T imaginary)
     for (const auto input : inputs(label))
         set_input(lri, input, 0, imaginary);
 #ifdef __GPU_RI
-    if (resident)
-        lri.set_gpu_resident_data_names({"a", "b", "a0b0"});
+    RI::GPU_Resident_Options options;
+    options.enabled = resident;
+    options.data_names = {"a", "b", "a0b0"};
+    lri.set_gpu_resident_options(options);
 #endif
     return lri;
 }
@@ -68,6 +70,25 @@ void verify(Lri<T>& lri, Label label, bool gpu, const std::string& context)
 template <typename T>
 void check_resident(T imaginary, bool gpu)
 {
+#ifdef __GPU_RI
+    if(gpu)
+    {
+        // A named pack either fits in full or falls back; invalidation returns its
+        // budget, and copying an owner retains the explicit limit in an empty cache.
+        using Resident = RI::GPU_Data::Resident_Blocks<int, AtomCell, T>;
+        Tensors<T> source;
+        source[0][{0, {0}}] = make_tensor({2, 2}, 0, 0, 0, 0, imaginary);
+        Resident cache(MPI_COMM_WORLD, 4 * sizeof(typename Resident::Tdata_GPU));
+        if(!cache.ensure("C", 0, source) || cache.ensure("V", 0, source))
+            throw std::runtime_error("explicit resident budget was not enforced");
+        cache.invalidate("C");
+        if(!cache.ensure("V", 0, source))
+            throw std::runtime_error("resident invalidation did not return budget");
+        Resident detached(cache);
+        if(!detached.ensure("C", 0, source) || detached.ensure("V", 0, source))
+            throw std::runtime_error("detached resident cache lost explicit budget");
+    }
+#endif
     for (const auto label : RI::Label::array_ab_ab)
         for (bool resident : {false, true})
         {
@@ -89,6 +110,47 @@ void check_resident(T imaginary, bool gpu)
         }
 
     const auto label = Label::a0b0_a1b1;
+#ifdef __GPU_RI
+    // Policy changes must retire borrowed layout addresses, including when a pack
+    // no longer fits and falls back to per-call uploads. Keep the source copy live.
+    auto configured = make_lri(label, true, imaginary);
+    verify(configured, label, gpu, "warm automatic resident budget");
+    auto unchanged = configured;
+    RI::GPU_Resident_Options options;
+    options.enabled = true;
+    options.data_names = {"a", "b", "a0b0"};
+    for(double budget_gib : {0.125, 1.0 / (1024 * 1024 * 1024), 0.0})
+    {
+        options.budget_gib = budget_gib;
+        configured.set_gpu_resident_options(options);
+        verify(configured, label, gpu, "change resident budget");
+        configured.set_gpu_resident_options(options);
+        verify(configured, label, gpu, "repeat unchanged resident options");
+        auto budget_copy = configured;
+        set_input(budget_copy, Input::a, 23, imaginary);
+        verify(budget_copy, label, gpu, "detach with configured budget");
+        verify(configured, label, gpu, "original after configured-budget detach");
+    }
+    options.enabled = false;
+    configured.set_gpu_resident_options(options);
+    verify(configured, label, gpu, "disable residency without clearing names");
+    options.enabled = true;
+    configured.set_gpu_resident_options(options);
+    verify(configured, label, gpu, "reenable residency");
+    options.data_names = {"a0b0"};
+    configured.set_gpu_resident_options(options);
+    verify(configured, label, gpu, "change resident tensor names");
+    options.data_names.clear();
+    configured.set_gpu_resident_options(options);
+    verify(configured, label, gpu, "empty resident tensor names");
+    options.budget_gib = -1.0;
+    bool rejected = false;
+    try { configured.set_gpu_resident_options(options); }
+    catch(const std::invalid_argument&) { rejected = true; }
+    if(!rejected) throw std::runtime_error("negative resident budget was accepted");
+    verify(configured, label, gpu, "invalid options leave live caches usable");
+    verify(unchanged, label, gpu, "source copy after resident option changes");
+#endif
     // Both copying APIs must preserve the source's warmed C/V after a same-shaped update.
     for (bool assignment : {false, true})
         for (auto changed : {Input::a, Input::b, Input::a0b0, Input::a1b1})

@@ -79,12 +79,15 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 	using Resident_Map = typename Resident::Block_Map;
 	std::shared_ptr<GPU_Backend::Context> call_context;
 	Resident *resident = nullptr;
-	if(this->gpu_resident_names.empty())
+	if(!this->gpu_resident_options.enabled || this->gpu_resident_options.data_names.empty())
 		call_context.reset(new GPU_Backend::Context(this->mpi_comm));
 	else
 	{
 		if(!this->gpu_resident_blocks)
-			this->gpu_resident_blocks.reset(new Resident(this->mpi_comm));
+		{
+			const std::size_t budget_bytes = gpu_resident_budget_bytes(this->gpu_resident_options.budget_gib);
+			this->gpu_resident_blocks.reset(new Resident(this->mpi_comm, budget_bytes));
+		}
 		resident = this->gpu_resident_blocks.get();
 	}
 	GPU_Backend::Queue &queue = resident ? resident->queue() : call_context->queue();
@@ -98,7 +101,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::cal_loop3_GPU(
 	{
 		if(!resident) return nullptr;
 		const auto name = this->data_ab_name.find(input_label);
-		if(name == this->data_ab_name.end() || !this->gpu_resident_names.count(name->second)) return nullptr;
+		if(name == this->data_ab_name.end() || !this->gpu_resident_options.data_names.count(name->second)) return nullptr;
 		return resident->ensure(name->second, variant, source);
 	};
 	// The transposed C maps have a different element layout from the source C blocks.

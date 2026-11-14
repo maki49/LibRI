@@ -29,16 +29,22 @@ class Resident_Blocks
     using Block_Map = std::map<TA, std::map<TAC, Tdata_GPU*>>;
 
     explicit Resident_Blocks(const MPI_Comm &communicator)
-        : Resident_Blocks(std::make_shared<GPU_Backend::Context>(communicator)) {}
+        : Resident_Blocks(communicator, 0) {}
+
+    Resident_Blocks(const MPI_Comm &communicator, std::size_t requested_bytes)
+        : Resident_Blocks(std::make_shared<GPU_Backend::Context>(communicator), requested_bytes) {}
 
     // Detach tensor values into an empty cache, retaining the established MPI/GPU context.
     Resident_Blocks(const Resident_Blocks &other)
-        : Resident_Blocks(other.context) {}
+        : Resident_Blocks(other.context, other.requested_budget_bytes) {}
 
   private:
-    explicit Resident_Blocks(const std::shared_ptr<GPU_Backend::Context> &context_in)
-        : context(context_in)
+    explicit Resident_Blocks(const std::shared_ptr<GPU_Backend::Context> &context_in,
+                             std::size_t requested_bytes)
+        : context(context_in), requested_budget_bytes(requested_bytes), budget_bytes(requested_bytes)
     {
+        // Explicit budgets bypass the automatic fraction/cap; allocation remains demand-driven.
+        if(requested_bytes) return;
 #ifdef __DDLA_RI
         std::size_t free_bytes = 0;
         std::size_t total_bytes = 0;
@@ -139,6 +145,7 @@ class Resident_Blocks
 
     std::shared_ptr<GPU_Backend::Context> context;
     std::map<Key, std::unique_ptr<Pack>> packs;
+    std::size_t requested_budget_bytes = 0;
     std::size_t budget_bytes = 0;
     std::size_t used_bytes = 0;
 };

@@ -13,6 +13,9 @@
 #include "RI_Tools.h"
 #include "../global/Global_Func-2.h"
 #include "Filter_Atom.h"
+#ifdef __GPU_RI
+#include "gpu/GPU_Resident_Options.h"
+#endif
 
 #include <mpi.h>
 #include <array>
@@ -96,11 +99,12 @@ public:
 	std::shared_ptr<Gpu_LR_Plan_Cache<TA, TC, Tdata>> gpu_lr_plan_cache;
 	// Owns device copies only for explicitly named geometry-fixed input packs.
 	std::shared_ptr<GPU_Data::Resident_Blocks<TA, TAC, Tdata>> gpu_resident_blocks;
-	std::set<std::string> gpu_resident_names;
+	GPU_Resident_Options gpu_resident_options;
 	// Detach shared resident values before replacing/freeing an input, without MPI collectives.
 	void invalidate_gpu_resident_data(const std::string &save_name);
   public:
-	void set_gpu_resident_data_names(const std::set<std::string> &names);
+	// Configure named geometry-tensor residency; changes invalidate dependent GPU layouts.
+	void set_gpu_resident_options(const GPU_Resident_Options &options);
 	void cal_loop3_GPU(
 		const std::vector<Label::ab_ab> &labels,
 		std::map<TA, std::map<TAC, Tensor<Tdata>>> &Ds_result,

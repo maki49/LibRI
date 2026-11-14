@@ -100,7 +100,7 @@ void LRI<TA,Tcell,Ndim,Tdata>::invalidate_gpu_resident_data(const std::string &s
 	if(!this->gpu_resident_blocks) return;
 	// Copies may share unchanged C/V. Updating one copy must not replace the other's values.
 	// The detached cache shares its context: owner counts can differ between MPI ranks.
-	if(this->gpu_resident_blocks.use_count() > 1 && this->gpu_resident_names.count(save_name))
+	if(this->gpu_resident_blocks.use_count() > 1 && this->gpu_resident_options.data_names.count(save_name))
 		this->gpu_resident_blocks.reset(
 			new GPU_Data::Resident_Blocks<TA, TAC, Tdata>(*this->gpu_resident_blocks));
 	else
@@ -108,13 +108,17 @@ void LRI<TA,Tcell,Ndim,Tdata>::invalidate_gpu_resident_data(const std::string &s
 }
 
 template<typename TA, typename Tcell, std::size_t Ndim, typename Tdata>
-void LRI<TA,Tcell,Ndim,Tdata>::set_gpu_resident_data_names(
-	const std::set<std::string> &names)
+void LRI<TA,Tcell,Ndim,Tdata>::set_gpu_resident_options(
+	const GPU_Resident_Options &options)
 {
-	if(this->gpu_resident_names == names) return;
-	this->gpu_resident_names = names;
-	this->gpu_resident_blocks.reset();
+	gpu_resident_budget_bytes(options.budget_gib);
+	if(this->gpu_resident_options.enabled == options.enabled
+	   && this->gpu_resident_options.data_names == options.data_names
+	   && this->gpu_resident_options.budget_gib == options.budget_gib) return;
+	this->gpu_resident_options = options;
+	// Layouts borrow resident addresses; retire them together without creating a context here.
 	this->gpu_lr_plan_cache.reset();
+	this->gpu_resident_blocks.reset();
 }
 #endif
 
